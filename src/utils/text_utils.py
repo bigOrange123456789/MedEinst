@@ -49,14 +49,32 @@ class SemanticMatcher:
     def _init_embedding_client(self) -> None:
 
         try:
-            from src.memory.embedding_client import EmbeddingClient
+            from pathlib import Path
+            import yaml
 
-            if os.getenv("OPENAI_API_KEY"):
-                self._embedding_client = EmbeddingClient()
+            from src.memory.embedding_client import EmbeddingClient
+            from src.utils.runtime_config import configured_base_url
+
+            # 与 scripts/run_ecr_agent.py 保持一致：从 settings.yaml 读取嵌入配置，
+            # 而不是硬编码环境变量名。
+            config_path = Path(__file__).resolve().parents[2] / "config" / "settings.yaml"
+            with open(config_path, "r", encoding="utf-8") as handle:
+                config = yaml.safe_load(handle) or {}
+
+            embedding_config = config.get("embedding", {}) or {}
+            api_key_env = embedding_config.get("api_key_env", "OPENAI_API_KEY")
+
+            if os.getenv(api_key_env):
+                self._embedding_client = EmbeddingClient(
+                    base_url=configured_base_url(embedding_config),
+                    api_key_env=api_key_env,
+                    model=embedding_config.get("model_name", "text-embedding-3-small"),
+                    dimension=embedding_config.get("dimension", 1536),
+                )
                 self._embedding_available = True
                 print("[SemanticMatcher] Embedding client initialized successfully")
             else:
-                print("[SemanticMatcher] Warning: No API key found, embedding disabled")
+                print(f"[SemanticMatcher] Warning: No API key found ({api_key_env}), embedding disabled")
 
         except Exception as e:
             print(f"[SemanticMatcher] Warning: Failed to init embedding client: {e}")
