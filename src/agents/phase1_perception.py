@@ -253,7 +253,7 @@ class Phase1TrackAAgent:
         result = self.llm_client.generate_json(
             messages=messages,
             model=self.model_name,
-            # logprobs=True,
+            logprobs=False,
 
             temperature=0.0,
             max_tokens=4096

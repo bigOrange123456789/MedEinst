@@ -43,16 +43,19 @@ class LLMClient:
         retry_delay: float = 2.0
     ) -> Dict[str, Any]:
 
+        request = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        # Some compatible endpoints reject logprob fields even when set to null.
+        if logprobs:
+            request.update(logprobs=True, top_logprobs=top_logprobs)
+
         for attempt in range(max_retries):
             try:
-                completion = self.client.chat.completions.create(
-                    model=model,
-                    messages=messages,
-                    logprobs=logprobs,
-                    top_logprobs=top_logprobs if logprobs else None,
-                    temperature=temperature,
-                    max_tokens=max_tokens
-                )
+                completion = self.client.chat.completions.create(**request)
 
                 content = completion.choices[0].message.content
 

@@ -93,6 +93,7 @@ class CriticalModelAgent:
             result = self.llm_client.generate_json(
                 messages=messages,
                 model=self.model_name,
+                logprobs=False,
                 temperature=0.3,
                 max_tokens=2048
             )
