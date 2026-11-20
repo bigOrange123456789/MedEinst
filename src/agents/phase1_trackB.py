@@ -1,4 +1,5 @@
 """Analytic pathway for objective patient observations."""
+from src.utils.console import tr
 import json
 import re
 from typing import Dict, Any, Optional, List
@@ -61,7 +62,10 @@ class Phase1TrackBAgent:
         global_hint: Optional[str] = None
     ) -> Dict[str, Any]:
 
-        print("[Phase1 Track B] Starting Problem Representation...")
+        print(tr(
+            "[Phase1 Track B] Starting Problem Representation...",
+            '[阶段1 轨道B] 开始构建病情表示...'
+        ))
 
         if age is None or sex is None:
             extracted_age, extracted_sex = self._extract_age_sex_from_narrative(raw_narrative)
@@ -101,7 +105,10 @@ class Phase1TrackBAgent:
         )
 
         if result["error"]:
-            print(f"[Phase1 Track B] LLM error: {result['error']}")
+            print(tr(
+                f"[Phase1 Track B] LLM error: {result['error']}",
+                f"[阶段1 轨道B] 模型调用错误：{result['error']}"
+            ))
             return {
                 "problem_representation_one_liner": "",
                 "p_nodes": [],
@@ -109,7 +116,10 @@ class Phase1TrackBAgent:
             }
 
         response_content = result["content"]
-        print(f"[Phase1 Track B] LLM response length: {len(response_content)} chars")
+        print(tr(
+            f"[Phase1 Track B] LLM response length: {len(response_content)} chars",
+            f'[阶段1 轨道B] 模型响应长度：{len(response_content)} 个字符'
+        ))
 
         parsed_json = parse_json_from_text(response_content, verbose=True)
 
@@ -121,19 +131,31 @@ class Phase1TrackBAgent:
             one_liner = parsed_json.get("problem_representation_one_liner", "")
 
         if not p_nodes:
-            print(f"[Phase1 Track B] Trying robust P-Nodes extraction...")
+            print(tr(
+                f"[Phase1 Track B] Trying robust P-Nodes extraction...",
+                '[阶段1 轨道B] 正在尝试容错提取患者节点（P）...'
+            ))
             p_nodes = robust_parse_p_nodes(response_content, verbose=True)
 
         if not one_liner:
             one_liner = extract_json_field(response_content, "problem_representation_one_liner", verbose=False)
             if one_liner:
-                print(f"[Phase1 Track B] Extracted one_liner via field extraction")
+                print(tr(
+                    f"[Phase1 Track B] Extracted one_liner via field extraction",
+                    '[阶段1 轨道B] 已通过字段提取获取病情摘要'
+                ))
             else:
                 one_liner = ""
 
         if not p_nodes:
-            print(f"[Phase1 Track B] Failed to extract any P-Nodes")
-            print(f"[Phase1 Track B] Raw response preview: {response_content[:500]}...")
+            print(tr(
+                f"[Phase1 Track B] Failed to extract any P-Nodes",
+                '[阶段1 轨道B] 未能提取任何患者节点（P）'
+            ))
+            print(tr(
+                f"[Phase1 Track B] Raw response preview: {response_content[:500]}...",
+                f'[阶段1 轨道B] 原始响应预览：{response_content[:500]}...'
+            ))
             return {
                 "problem_representation_one_liner": one_liner,
                 "p_nodes": [],
@@ -142,8 +164,14 @@ class Phase1TrackBAgent:
 
         p_nodes = self._validate_p_nodes(p_nodes)
 
-        print(f"[Phase1 Track B] Extracted {len(p_nodes)} P-Nodes")
-        print(f"[Phase1 Track B] One-liner: {one_liner[:100]}...")
+        print(tr(
+            f"[Phase1 Track B] Extracted {len(p_nodes)} P-Nodes",
+            f'[阶段1 轨道B] 已提取 {len(p_nodes)} 个患者节点（P）'
+        ))
+        print(tr(
+            f"[Phase1 Track B] One-liner: {one_liner[:100]}...",
+            f'[阶段1 轨道B] 病情摘要：{one_liner[:100]}...'
+        ))
 
         return {
             "problem_representation_one_liner": one_liner,

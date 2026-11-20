@@ -1,4 +1,6 @@
 """Disease terminology and medical retrieval helpers."""
+
+from src.utils.console import tr
 import json
 import os
 from typing import Dict, List, Optional, Any, Tuple
@@ -25,13 +27,22 @@ def load_disease_synonyms() -> Dict[str, Dict]:
             try:
                 with open(synonyms_path, 'r', encoding='utf-8') as f:
                     _SYNONYMS_CACHE = json.load(f)
-                print(f"[KnowledgeUtils] Loaded {len(_SYNONYMS_CACHE)} disease synonyms from {synonyms_path}")
+                print(tr(
+                    f"[KnowledgeUtils] Loaded {len(_SYNONYMS_CACHE)} disease synonyms from {synonyms_path}",
+                    f'[知识工具] 已从 {synonyms_path} 加载 {len(_SYNONYMS_CACHE)} 条疾病同义词记录',
+                ))
                 return _SYNONYMS_CACHE
             except Exception as e:
-                print(f"[KnowledgeUtils] Error loading synonyms from {synonyms_path}: {e}")
+                print(tr(
+                    f"[KnowledgeUtils] Error loading synonyms from {synonyms_path}: {e}",
+                    f'[知识工具] 从 {synonyms_path} 加载同义词失败：{e}',
+                ))
                 continue
 
-    print("[KnowledgeUtils] WARNING: disease_synonyms.json not found, using empty synonyms")
+    print(tr(
+        "[KnowledgeUtils] WARNING: disease_synonyms.json not found, using empty synonyms",
+        '[知识工具] 警告：未找到 disease_synonyms.json，将使用空的同义词表',
+    ))
     _SYNONYMS_CACHE = {}
     return _SYNONYMS_CACHE
 
@@ -307,9 +318,18 @@ class ContextBudgetManager:
         pubmed_budget = self.available_for_content - ot_total_tokens
         pubmed_per_candidate = max(500, pubmed_budget // n_candidates) if n_candidates > 0 else 0
 
-        print(f"[ContextBudget] Total available: {self.available_for_content} tokens")
-        print(f"[ContextBudget] Open Targets used: {ot_total_tokens} tokens")
-        print(f"[ContextBudget] PubMed per candidate: {pubmed_per_candidate} tokens")
+        print(tr(
+            f"[ContextBudget] Total available: {self.available_for_content} tokens",
+            f'[上下文预算] 可用总量：{self.available_for_content} 个词元',
+        ))
+        print(tr(
+            f"[ContextBudget] Open Targets used: {ot_total_tokens} tokens",
+            f'[上下文预算] Open Targets 已使用：{ot_total_tokens} 个词元',
+        ))
+        print(tr(
+            f"[ContextBudget] PubMed per candidate: {pubmed_per_candidate} tokens",
+            f'[上下文预算] 每个候选疾病的 PubMed 配额：{pubmed_per_candidate} 个词元',
+        ))
 
         for candidate in candidates:
             d_id = candidate.get("id", "")

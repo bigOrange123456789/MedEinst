@@ -1,5 +1,7 @@
 """Semantic alignment between observations and graph nodes."""
 
+from src.utils.console import tr
+
 import os
 import numpy as np
 from typing import List, Dict, Optional, Tuple, Any
@@ -12,7 +14,10 @@ try:
     RAPIDFUZZ_AVAILABLE = True
 except ImportError:
     RAPIDFUZZ_AVAILABLE = False
-    print("[TextUtils] Warning: rapidfuzz not installed, fuzzy match fallback disabled")
+    print(tr(
+        "[TextUtils] Warning: rapidfuzz not installed, fuzzy match fallback disabled",
+        '[文本工具] 警告：未安装 rapidfuzz，模糊匹配备用功能已禁用',
+    ))
 
 @dataclass
 class MatchResult:
@@ -72,12 +77,21 @@ class SemanticMatcher:
                     dimension=embedding_config.get("dimension", 1536),
                 )
                 self._embedding_available = True
-                print("[SemanticMatcher] Embedding client initialized successfully")
+                print(tr(
+                    "[SemanticMatcher] Embedding client initialized successfully",
+                    '[语义匹配] 嵌入客户端初始化成功',
+                ))
             else:
-                print(f"[SemanticMatcher] Warning: No API key found ({api_key_env}), embedding disabled")
+                print(tr(
+                    f"[SemanticMatcher] Warning: No API key found ({api_key_env}), embedding disabled",
+                    f'[语义匹配] 警告：未找到 API 密钥（{api_key_env}），嵌入功能已禁用',
+                ))
 
         except Exception as e:
-            print(f"[SemanticMatcher] Warning: Failed to init embedding client: {e}")
+            print(tr(
+                f"[SemanticMatcher] Warning: Failed to init embedding client: {e}",
+                f'[语义匹配] 警告：嵌入客户端初始化失败：{e}',
+            ))
             self._embedding_available = False
 
     def get_embedding(self, text: str) -> Optional[np.ndarray]:
@@ -102,7 +116,10 @@ class SemanticMatcher:
             return embedding
 
         except Exception as e:
-            print(f"[SemanticMatcher] Embedding error for '{text[:50]}...': {e}")
+            print(tr(
+                f"[SemanticMatcher] Embedding error for '{text[:50]}...': {e}",
+                f"[语义匹配] '{text[:50]}...' 的嵌入生成失败：{e}",
+            ))
             return None
 
     def get_embeddings_batch(self, texts: List[str]) -> Dict[str, np.ndarray]:
@@ -133,7 +150,10 @@ class SemanticMatcher:
                         self._cache[text_key] = embedding
 
             except Exception as e:
-                print(f"[SemanticMatcher] Batch embedding error: {e}")
+                print(tr(
+                    f"[SemanticMatcher] Batch embedding error: {e}",
+                    f'[语义匹配] 批量嵌入失败：{e}',
+                ))
 
         return results
 
@@ -215,14 +235,23 @@ class SemanticMatcher:
                                 similarity_matrix[i, j] = self.cosine_similarity(gg_emb, patient_emb)
 
                     used_embedding = True
-                    print(f"[SemanticMatcher] Built similarity matrix: {similarity_matrix.shape}")
+                    print(tr(
+                        f"[SemanticMatcher] Built similarity matrix: {similarity_matrix.shape}",
+                        f'[语义匹配] 已构建相似度矩阵：{similarity_matrix.shape}',
+                    ))
 
             except Exception as e:
-                print(f"[Warning] Embedding API failed, falling back to fuzzy match: {e}")
+                print(tr(
+                    f"[Warning] Embedding API failed, falling back to fuzzy match: {e}",
+                    f'[警告] 嵌入 API 调用失败，将使用模糊匹配：{e}',
+                ))
                 similarity_matrix = None
 
         if similarity_matrix is None:
-            print("[SemanticMatcher] Using fuzzy match fallback")
+            print(tr(
+                "[SemanticMatcher] Using fuzzy match fallback",
+                '[语义匹配] 正在使用模糊匹配备用方法',
+            ))
             similarity_matrix = np.zeros((len(gg_contents), len(patient_contents)))
 
             for i, gg_content in enumerate(gg_contents):
@@ -257,9 +286,12 @@ class SemanticMatcher:
                     matched=True,
                     match_method="embedding" if used_embedding else "fuzzy"
                 )
-                print(f"[Phase 2] P-Node Matching: GG node '{gg_content[:40]}...' "
+                print(tr(
+                    f"[Phase 2] P-Node Matching: GG node '{gg_content[:40]}...' "
                       f"matched Patient node '{patient_p.get('content', '')[:40]}...' "
-                      f"(Sim: {max_sim:.2f})")
+                      f"(Sim: {max_sim:.2f})",
+                    f"[阶段 2] 患者特征节点匹配：疾病图节点 '{gg_content[:40]}...' 匹配患者节点 '{patient_p.get('content', '')[:40]}...'（相似度：{max_sim:.2f}）",
+                ))
             else:
                 result = MatchResult(
                     gg_content=gg_content,
@@ -277,7 +309,10 @@ class SemanticMatcher:
     def clear_cache(self) -> None:
 
         self._cache.clear()
-        print("[SemanticMatcher] Cache cleared")
+        print(tr(
+            "[SemanticMatcher] Cache cleared",
+            '[语义匹配] 缓存已清空',
+        ))
 
     def get_cache_size(self) -> int:
 

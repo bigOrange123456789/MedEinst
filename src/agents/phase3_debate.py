@@ -1,4 +1,5 @@
 """Offline evidence audit and diagnostic judgment."""
+from src.utils.console import tr
 import json
 import re
 import yaml
@@ -41,7 +42,10 @@ class JudgeAgent:
 
                 return risk_map
         except Exception as e:
-            print(f"[JudgeAgent] Error loading risk map: {e}")
+            print(tr(
+                f"[JudgeAgent] Error loading risk map: {e}",
+                f'[裁决智能体] 风险映射表加载出错：{e}'
+            ))
             return {}
 
     def process(self, state: Dict[str, Any]) -> Dict[str, Any]:
@@ -89,7 +93,10 @@ class JudgeAgent:
             )
 
             if result["error"]:
-                print(f"[JudgeAgent] LLM error: {result['error']}")
+                print(tr(
+                    f"[JudgeAgent] LLM error: {result['error']}",
+                    f"[裁决智能体] 模型调用错误：{result['error']}"
+                ))
                 return {
                     **state,
                     "status": "failed",
@@ -97,13 +104,22 @@ class JudgeAgent:
                 }
 
             response_content = result["content"]
-            print(f"[JudgeAgent] LLM response length: {len(response_content)} chars")
+            print(tr(
+                f"[JudgeAgent] LLM response length: {len(response_content)} chars",
+                f'[裁决智能体] 模型响应长度：{len(response_content)} 个字符'
+            ))
 
             parsed_json = parse_json_from_text(response_content, verbose=True)
 
             if not parsed_json:
-                print(f"[JudgeAgent] Failed to parse JSON")
-                print(f"[JudgeAgent] Raw response preview: {response_content[:500]}...")
+                print(tr(
+                    f"[JudgeAgent] Failed to parse JSON",
+                    '[裁决智能体] JSON 解析失败'
+                ))
+                print(tr(
+                    f"[JudgeAgent] Raw response preview: {response_content[:500]}...",
+                    f'[裁决智能体] 原始响应预览：{response_content[:500]}...'
+                ))
                 return {
                     **state,
                     "status": "failed",
@@ -112,8 +128,11 @@ class JudgeAgent:
 
             final_output = self._validate_and_fix_output(parsed_json, phase1_result, audit_results)
 
-            print(f"[JudgeAgent] Final diagnosis: {final_output.get('final_diagnosis_id')} - "
-                  f"{final_output.get('final_diagnosis_name')} ({final_output.get('status')})")
+            print(tr(
+                f"[JudgeAgent] Final diagnosis: {final_output.get('final_diagnosis_id')} - "
+                      f"{final_output.get('final_diagnosis_name')} ({final_output.get('status')})",
+                f"[裁决智能体] 最终诊断：{final_output.get('final_diagnosis_id')} - {final_output.get('final_diagnosis_name')}（{final_output.get('status')}）"
+            ))
 
             return {
                 **state,
@@ -124,7 +143,10 @@ class JudgeAgent:
         except Exception as e:
             import traceback
             error_msg = f"Phase 3 error: {str(e)}\n{traceback.format_exc()}"
-            print(f"[JudgeAgent] {error_msg}")
+            print(tr(
+                f"[JudgeAgent] {error_msg}",
+                f'[裁决智能体] 处理错误：{error_msg}'
+            ))
             return {
                 **state,
                 "status": "failed",
@@ -500,7 +522,10 @@ Output your decision in JSON format:
 
             for candidate_id in top_candidates:
                 if candidate_id in DIAGNOSIS_ID_MAP and candidate_id not in disqualified_ids:
-                    print(f"[JudgeAgent] Invalid ID '{final_diagnosis_id}', using fallback: {candidate_id}")
+                    print(tr(
+                        f"[JudgeAgent] Invalid ID '{final_diagnosis_id}', using fallback: {candidate_id}",
+                        f"[裁决智能体] ID '{final_diagnosis_id}' 无效，使用后备诊断：{candidate_id}"
+                    ))
                     parsed_json["final_diagnosis_id"] = candidate_id
                     parsed_json["final_diagnosis_name"] = DIAGNOSIS_ID_MAP[candidate_id]
                     parsed_json["status"] = "Fallback"

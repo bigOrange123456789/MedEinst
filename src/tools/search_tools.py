@@ -1,4 +1,6 @@
 """PubMed and OpenTargets retrieval for live causal reasoning."""
+
+from src.utils.console import tr
 import os
 import re
 import requests
@@ -119,7 +121,10 @@ class OpenTargetsTool:
 
         self.last_raw_response: Optional[Dict[str, Any]] = None
         self.last_search_term: str = ""
-        print("[OpenTargetsTool] Initialized (with Exact Match validation)")
+        print(tr(
+            "[OpenTargetsTool] Initialized (with Exact Match validation)",
+            '[Open Targets 检索] 已初始化（启用精确匹配验证）',
+        ))
 
     def search_disease_with_validation(
         self,
@@ -136,7 +141,10 @@ class OpenTargetsTool:
         self.last_search_term = ""
 
         for term in search_terms:
-            print(f"[OpenTargetsTool] Trying search term: '{term}'...")
+            print(tr(
+                f"[OpenTargetsTool] Trying search term: '{term}'...",
+                f"[Open Targets 检索] 正在尝试检索词：'{term}'...",
+            ))
             self.last_search_term = term
 
             try:
@@ -145,19 +153,31 @@ class OpenTargetsTool:
                 self.last_raw_response = raw_search_response
 
                 if not efo_id:
-                    print(f"[OpenTargetsTool] No valid match for '{term}', trying next synonym...")
+                    print(tr(
+                        f"[OpenTargetsTool] No valid match for '{term}', trying next synonym...",
+                        f"[Open Targets 检索] '{term}' 没有有效匹配，正在尝试下一个同义词...",
+                    ))
                     continue
 
                 disease_info = self._get_disease_details(efo_id)
                 if disease_info:
-                    print(f"[OpenTargetsTool] ✓ Successfully matched: '{term}' -> '{disease_info.get('name', '')}'")
+                    print(tr(
+                        f"[OpenTargetsTool] ✓ Successfully matched: '{term}' -> '{disease_info.get('name', '')}'",
+                        f"[Open Targets 检索] ✓ 匹配成功：'{term}' -> '{disease_info.get('name', '')}'",
+                    ))
                     return disease_info, raw_search_response
 
             except Exception as e:
-                print(f"[OpenTargetsTool] Error searching '{term}': {e}")
+                print(tr(
+                    f"[OpenTargetsTool] Error searching '{term}': {e}",
+                    f"[Open Targets 检索] 检索 '{term}' 失败：{e}",
+                ))
                 continue
 
-        print(f"[OpenTargetsTool] ✗ No matching disease found after trying all synonyms for '{disease_name}'")
+        print(tr(
+            f"[OpenTargetsTool] ✗ No matching disease found after trying all synonyms for '{disease_name}'",
+            f"[Open Targets 检索] ✗ 尝试 '{disease_name}' 的所有同义词后，仍未找到匹配疾病",
+        ))
         return None, self.last_raw_response
 
     def search_disease(self, disease_name: str) -> Optional[Dict[str, Any]]:
@@ -196,7 +216,10 @@ class OpenTargetsTool:
                 if areas:
                     result += f"\n\nTherapeutic Areas: {', '.join(areas)}"
 
-            print(f"[OpenTargetsTool] Retrieved description ({len(result)} chars)")
+            print(tr(
+                f"[OpenTargetsTool] Retrieved description ({len(result)} chars)",
+                f'[Open Targets 检索] 已获取描述（{len(result)} 字符）',
+            ))
             return result, raw_response
 
         return "", raw_response
@@ -241,17 +264,29 @@ class OpenTargetsTool:
                 efo_id = hit.get("id", "")
 
                 if validate_open_targets_match(disease_name, returned_name, None):
-                    print(f"[OpenTargetsTool] ✓ Validated match: '{disease_name}' -> '{returned_name}' ({efo_id})")
+                    print(tr(
+                        f"[OpenTargetsTool] ✓ Validated match: '{disease_name}' -> '{returned_name}' ({efo_id})",
+                        f"[Open Targets 检索] ✓ 匹配验证成功：'{disease_name}' -> '{returned_name}'（{efo_id}）",
+                    ))
                     return efo_id, data
                 else:
-                    print(f"[OpenTargetsTool] ✗ Match failed: '{disease_name}' vs '{returned_name}' (skipping)")
+                    print(tr(
+                        f"[OpenTargetsTool] ✗ Match failed: '{disease_name}' vs '{returned_name}' (skipping)",
+                        f"[Open Targets 检索] ✗ 匹配失败：'{disease_name}' 与 '{returned_name}'（已跳过）",
+                    ))
 
             if hits:
-                print(f"[OpenTargetsTool] No valid match found in {len(hits)} results")
+                print(tr(
+                    f"[OpenTargetsTool] No valid match found in {len(hits)} results",
+                    f'[Open Targets 检索] 在 {len(hits)} 条结果中未找到有效匹配',
+                ))
             return None, data
 
         except Exception as e:
-            print(f"[OpenTargetsTool] Search error: {e}")
+            print(tr(
+                f"[OpenTargetsTool] Search error: {e}",
+                f'[Open Targets 检索] 检索失败：{e}',
+            ))
             return None, None
 
     def _search_disease_id(self, disease_name: str) -> Optional[str]:
@@ -294,7 +329,10 @@ class OpenTargetsTool:
             return disease
 
         except Exception as e:
-            print(f"[OpenTargetsTool] Get details error: {e}")
+            print(tr(
+                f"[OpenTargetsTool] Get details error: {e}",
+                f'[Open Targets 检索] 获取详细信息失败：{e}',
+            ))
             return None
 
 
@@ -310,9 +348,15 @@ class PubMedTool:
         Entrez.email = self.email
         if self.api_key:
             Entrez.api_key = self.api_key
-            print(f"[PubMedTool] Initialized with API key")
+            print(tr(
+                f"[PubMedTool] Initialized with API key",
+                '[PubMed 检索] 已使用 API 密钥初始化',
+            ))
         else:
-            print(f"[PubMedTool] Initialized without API key (rate limited)")
+            print(tr(
+                f"[PubMedTool] Initialized without API key (rate limited)",
+                '[PubMed 检索] 已在无 API 密钥的模式下初始化（请求速率受限）',
+            ))
 
     def search_general_features(
         self,
@@ -321,7 +365,10 @@ class PubMedTool:
         use_expansion: bool = True
     ) -> str:
 
-        print(f"[PubMedTool] Searching general features for '{disease_name}'...")
+        print(tr(
+            f"[PubMedTool] Searching general features for '{disease_name}'...",
+            f"[PubMed 检索] 正在检索 '{disease_name}' 的一般特征...",
+        ))
 
         result = self._search_review_guideline(disease_name, max_results)
         if result:
@@ -333,22 +380,37 @@ class PubMedTool:
 
         if use_expansion:
             expanded_terms = expand_query_conservative(disease_name)
-            print(f"[PubMedTool] Trying Query Expansion: {expanded_terms}")
+            print(tr(
+                f"[PubMedTool] Trying Query Expansion: {expanded_terms}",
+                f'[PubMed 检索] 正在尝试扩展检索词：{expanded_terms}',
+            ))
 
             for term in expanded_terms[1:]:
-                print(f"[PubMedTool] Trying expanded term: '{term}'")
+                print(tr(
+                    f"[PubMedTool] Trying expanded term: '{term}'",
+                    f"[PubMed 检索] 正在尝试扩展词：'{term}'",
+                ))
 
                 result = self._search_review_guideline(term, max_results)
                 if result:
-                    print(f"[PubMedTool] Found results with expanded term: '{term}'")
+                    print(tr(
+                        f"[PubMedTool] Found results with expanded term: '{term}'",
+                        f"[PubMed 检索] 扩展词 '{term}' 已找到结果",
+                    ))
                     return result
 
                 result = self._search_general_fallback(term, max_results)
                 if result:
-                    print(f"[PubMedTool] Found fallback results with: '{term}'")
+                    print(tr(
+                        f"[PubMedTool] Found fallback results with: '{term}'",
+                        f"[PubMed 检索] 备用检索词 '{term}' 已找到结果",
+                    ))
                     return result
 
-        print(f"[PubMedTool] No results found for '{disease_name}' after all attempts")
+        print(tr(
+            f"[PubMedTool] No results found for '{disease_name}' after all attempts",
+            f"[PubMed 检索] 尝试所有检索方式后，未找到 '{disease_name}' 的结果",
+        ))
         return ""
 
     def _search_review_guideline(self, disease_name: str, max_results: int = 5) -> str:
@@ -370,7 +432,10 @@ class PubMedTool:
             search_handle.close()
 
             id_list = search_results.get("IdList", [])
-            print(f"[PubMedTool] Found {len(id_list)} Review/Guideline articles")
+            print(tr(
+                f"[PubMedTool] Found {len(id_list)} Review/Guideline articles",
+                f'[PubMed 检索] 找到 {len(id_list)} 篇综述或指南文献',
+            ))
 
             if not id_list:
                 return ""
@@ -380,11 +445,17 @@ class PubMedTool:
                 return ""
 
             merged_text = "\n\n---\n\n".join(abstracts)
-            print(f"[PubMedTool] Merged {len(abstracts)} abstracts ({len(merged_text)} chars)")
+            print(tr(
+                f"[PubMedTool] Merged {len(abstracts)} abstracts ({len(merged_text)} chars)",
+                f'[PubMed 检索] 已合并 {len(abstracts)} 篇摘要（{len(merged_text)} 字符）',
+            ))
             return merged_text
 
         except Exception as e:
-            print(f"[PubMedTool] Review/Guideline search error: {e}")
+            print(tr(
+                f"[PubMedTool] Review/Guideline search error: {e}",
+                f'[PubMed 检索] 综述或指南检索失败：{e}',
+            ))
             return ""
 
     def _search_general_fallback(self, disease_name: str, max_results: int = 5) -> str:
@@ -405,7 +476,10 @@ class PubMedTool:
             search_handle.close()
 
             id_list = search_results.get("IdList", [])
-            print(f"[PubMedTool] Fallback found {len(id_list)} articles")
+            print(tr(
+                f"[PubMedTool] Fallback found {len(id_list)} articles",
+                f'[PubMed 检索] 备用检索找到 {len(id_list)} 篇文献',
+            ))
 
             if not id_list:
                 return ""
@@ -415,11 +489,17 @@ class PubMedTool:
                 return ""
 
             merged_text = "\n\n---\n\n".join(abstracts)
-            print(f"[PubMedTool] Fallback merged {len(abstracts)} abstracts ({len(merged_text)} chars)")
+            print(tr(
+                f"[PubMedTool] Fallback merged {len(abstracts)} abstracts ({len(merged_text)} chars)",
+                f'[PubMed 检索] 备用检索已合并 {len(abstracts)} 篇摘要（{len(merged_text)} 字符）',
+            ))
             return merged_text
 
         except Exception as e:
-            print(f"[PubMedTool] Fallback search error: {e}")
+            print(tr(
+                f"[PubMedTool] Fallback search error: {e}",
+                f'[PubMed 检索] 备用检索失败：{e}',
+            ))
             return ""
 
     def _fetch_abstracts(self, id_list: List[str], max_results: int) -> List[str]:
@@ -440,7 +520,10 @@ class PubMedTool:
         max_results: int = 3
     ) -> List[str]:
 
-        print(f"[PubMedTool] Searching differential: '{disease_a}' vs '{disease_b}'")
+        print(tr(
+            f"[PubMedTool] Searching differential: '{disease_a}' vs '{disease_b}'",
+            f"[PubMed 检索] 正在检索鉴别诊断：'{disease_a}' 与 '{disease_b}'",
+        ))
 
         try:
             query = (
@@ -458,17 +541,26 @@ class PubMedTool:
             search_handle.close()
 
             id_list = search_results.get("IdList", [])
-            print(f"[PubMedTool] Found {len(id_list)} articles")
+            print(tr(
+                f"[PubMedTool] Found {len(id_list)} articles",
+                f'[PubMed 检索] 找到 {len(id_list)} 篇文献',
+            ))
 
             if not id_list:
                 return self._fallback_differential_search(disease_a, disease_b, max_results)
 
             abstracts = self._fetch_abstracts(id_list, max_results)
-            print(f"[PubMedTool] Retrieved {len(abstracts)} valid abstracts")
+            print(tr(
+                f"[PubMedTool] Retrieved {len(abstracts)} valid abstracts",
+                f'[PubMed 检索] 已获取 {len(abstracts)} 篇有效摘要',
+            ))
             return abstracts
 
         except Exception as e:
-            print(f"[PubMedTool] Error searching differential: {e}")
+            print(tr(
+                f"[PubMedTool] Error searching differential: {e}",
+                f'[PubMed 检索] 鉴别诊断检索失败：{e}',
+            ))
             return []
 
     def _fallback_differential_search(
@@ -478,7 +570,10 @@ class PubMedTool:
         max_results: int = 3
     ) -> List[str]:
 
-        print(f"[PubMedTool] Trying fallback search...")
+        print(tr(
+            f"[PubMedTool] Trying fallback search...",
+            '[PubMed 检索] 正在尝试备用检索...',
+        ))
 
         try:
             query = f'("{disease_a}"[All Fields] AND "{disease_b}"[All Fields])'
@@ -493,7 +588,10 @@ class PubMedTool:
             search_handle.close()
 
             id_list = search_results.get("IdList", [])
-            print(f"[PubMedTool] Fallback found {len(id_list)} articles")
+            print(tr(
+                f"[PubMedTool] Fallback found {len(id_list)} articles",
+                f'[PubMed 检索] 备用检索找到 {len(id_list)} 篇文献',
+            ))
 
             if not id_list:
                 return []
@@ -501,7 +599,10 @@ class PubMedTool:
             return self._fetch_abstracts(id_list, max_results)
 
         except Exception as e:
-            print(f"[PubMedTool] Fallback search error: {e}")
+            print(tr(
+                f"[PubMedTool] Fallback search error: {e}",
+                f'[PubMed 检索] 备用检索失败：{e}',
+            ))
             return []
 
     def _fetch_abstract(self, pmid: str) -> str:
@@ -557,5 +658,8 @@ class PubMedTool:
             return abstract_text
 
         except Exception as e:
-            print(f"[PubMedTool] Error fetching abstract for PMID {pmid}: {e}")
+            print(tr(
+                f"[PubMedTool] Error fetching abstract for PMID {pmid}: {e}",
+                f'[PubMed 检索] 获取 PMID {pmid} 的摘要失败：{e}',
+            ))
             return ""

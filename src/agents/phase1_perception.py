@@ -1,4 +1,5 @@
 """Intuitive pathway for candidate differential diagnoses."""
+from src.utils.console import tr
 import json
 import math
 import re
@@ -36,14 +37,23 @@ def normalize_diagnosis_id(raw_id: Any) -> Optional[str]:
                     valid_options.append(f"{num:02d}")
 
         if len(valid_options) == 1:
-            print(f"[ID Normalize] Corrected '{raw_str}' -> '{valid_options[0]}'")
+            print(tr(
+                f"[ID Normalize] Corrected '{raw_str}' -> '{valid_options[0]}'",
+                f"[ID 规范化] 已修正 '{raw_str}' -> '{valid_options[0]}'"
+            ))
             return valid_options[0]
         elif len(valid_options) > 1:
 
-            print(f"[ID Normalize] Ambiguous '{raw_str}', choosing '{valid_options[1]}' over '{valid_options[0]}'")
+            print(tr(
+                f"[ID Normalize] Ambiguous '{raw_str}', choosing '{valid_options[1]}' over '{valid_options[0]}'",
+                f"[ID 规范化] '{raw_str}' 有歧义，选择 '{valid_options[1]}'，舍弃 '{valid_options[0]}'"
+            ))
             return valid_options[1]
 
-    print(f"[ID Normalize] Invalid ID '{raw_id}', returning None")
+    print(tr(
+        f"[ID Normalize] Invalid ID '{raw_id}', returning None",
+        f"[ID 规范化] ID '{raw_id}' 无效，返回 None"
+    ))
     return None
 
 def normalize_candidate_list(candidates: List[Any]) -> List[str]:
@@ -82,7 +92,10 @@ class Phase1TrackAAgent:
                     valid_ids.append(norm_id)
 
             if valid_ids:
-                print(f"[Phase1 Track A] Parsed array as top_candidates: {valid_ids}")
+                print(tr(
+                    f"[Phase1 Track A] Parsed array as top_candidates: {valid_ids}",
+                    f'[阶段1 轨道A] 已将数组解析为候选诊断列表：{valid_ids}'
+                ))
 
                 final_diagnosis_id = extract_json_field(response_text, 'final_diagnosis_id', verbose=False)
                 if final_diagnosis_id:
@@ -105,7 +118,10 @@ class Phase1TrackAAgent:
             differential_reasoning = extract_json_field(response_text, 'differential_reasoning', verbose=False)
 
             if top_candidates or final_diagnosis_id:
-                print("[Phase1 Track A] Using field extraction fallback")
+                print(tr(
+                    "[Phase1 Track A] Using field extraction fallback",
+                    '[阶段1 轨道A] 使用字段提取作为后备方案'
+                ))
                 return {
                     "top_candidates": top_candidates if isinstance(top_candidates, list) else [],
                     "final_diagnosis_id": str(final_diagnosis_id) if final_diagnosis_id else None,
@@ -180,14 +196,26 @@ class Phase1TrackAAgent:
                     token_positions.append((start, end, token_info.token))
 
             if not target_tokens:
-                print(f"[DEBUG] No tokens found for diagnosis_id '{diagnosis_id_str}'")
+                print(tr(
+                    f"[DEBUG] No tokens found for diagnosis_id '{diagnosis_id_str}'",
+                    f"[调试] 未找到诊断 ID '{diagnosis_id_str}' 对应的词元"
+                ))
                 return 0.0
 
-            print(f"[DEBUG] Value position: {val_start_abs} to {val_end_abs}")
-            print(f"[DEBUG] All candidate tokens (overlapping with value position):")
+            print(tr(
+                f"[DEBUG] Value position: {val_start_abs} to {val_end_abs}",
+                f'[调试] 值的位置：{val_start_abs} 至 {val_end_abs}'
+            ))
+            print(tr(
+                f"[DEBUG] All candidate tokens (overlapping with value position):",
+                '[调试] 所有候选词元（与值的位置重叠）：'
+            ))
             for idx, (start, end, token) in enumerate(token_positions):
                 token_info = target_tokens[idx]
-                print(f"  Token: {repr(token)}, Logprob: {token_info.logprob}, Position: {start}-{end}")
+                print(tr(
+                    f"  Token: {repr(token)}, Logprob: {token_info.logprob}, Position: {start}-{end}",
+                    f'  词元：{repr(token)}，对数概率：{token_info.logprob}，位置：{start}-{end}'
+                ))
 
             sorted_indices = sorted(range(len(target_tokens)),
                                   key=lambda i: token_positions[i][0])
@@ -214,23 +242,41 @@ class Phase1TrackAAgent:
             reconstructed_value = "".join(t.token for t in matched_tokens)
             cleaned_value = reconstructed_value.strip('"').strip("'").strip()
 
-            print(f"[DEBUG] Final diagnosis tokens: {tokens_repr} with logprobs: {logprobs_list}")
-            print(f"[DEBUG] Reconstructed value: {repr(reconstructed_value)}, Cleaned: {repr(cleaned_value)}, Expected: {repr(diagnosis_id_str)}")
+            print(tr(
+                f"[DEBUG] Final diagnosis tokens: {tokens_repr} with logprobs: {logprobs_list}",
+                f'[调试] 最终诊断词元：{tokens_repr}，对应对数概率：{logprobs_list}'
+            ))
+            print(tr(
+                f"[DEBUG] Reconstructed value: {repr(reconstructed_value)}, Cleaned: {repr(cleaned_value)}, Expected: {repr(diagnosis_id_str)}",
+                f'[调试] 重建值：{repr(reconstructed_value)}，清理后：{repr(cleaned_value)}，预期值：{repr(diagnosis_id_str)}'
+            ))
 
             if cleaned_value != diagnosis_id_str:
 
-                print(f"[DEBUG] Validation failed: cleaned_value '{cleaned_value}' != diagnosis_id_str '{diagnosis_id_str}'")
+                print(tr(
+                    f"[DEBUG] Validation failed: cleaned_value '{cleaned_value}' != diagnosis_id_str '{diagnosis_id_str}'",
+                    f"[调试] 校验失败：清理值 '{cleaned_value}' != 诊断 ID '{diagnosis_id_str}'"
+                ))
                 return 0.0
 
             sum_logprob = sum(t.logprob for t in matched_tokens)
-            print(f"[DEBUG] Sum of logprobs: {sum_logprob}, Exp(sum_logprob): {math.exp(sum_logprob)}")
+            print(tr(
+                f"[DEBUG] Sum of logprobs: {sum_logprob}, Exp(sum_logprob): {math.exp(sum_logprob)}",
+                f'[调试] 对数概率总和：{sum_logprob}，总和的指数值：{math.exp(sum_logprob)}'
+            ))
 
             confidence = math.exp(sum_logprob) * 100
-            print(f"[DEBUG] Calculated confidence: {confidence}%")
+            print(tr(
+                f"[DEBUG] Calculated confidence: {confidence}%",
+                f'[调试] 计算得到的置信度：{confidence}%'
+            ))
             return max(0.0, min(100.0, confidence))
 
         except Exception as e:
-            print(f"Error calculating confidence from logprobs: {e}")
+            print(tr(
+                f"Error calculating confidence from logprobs: {e}",
+                f'根据对数概率计算置信度时出错：{e}'
+            ))
             import traceback
             traceback.print_exc()
             return 0.0
@@ -291,7 +337,10 @@ class Phase1TrackAAgent:
 
             if top_candidates:
                 final_diagnosis_id = top_candidates[0]
-                print(f"[Phase1 Track A] Using first candidate '{final_diagnosis_id}' as fallback for missing final_diagnosis_id")
+                print(tr(
+                    f"[Phase1 Track A] Using first candidate '{final_diagnosis_id}' as fallback for missing final_diagnosis_id",
+                    f"[阶段1 轨道A] 最终诊断 ID 缺失，使用首个候选 '{final_diagnosis_id}' 作为后备诊断"
+                ))
             else:
                 return {
                     "structured_analysis": parsed_json.get("structured_analysis"),

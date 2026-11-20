@@ -1,4 +1,5 @@
 """Online graph reasoning with prior Illness Graphs and live evidence."""
+from src.utils.console import tr
 
 import json
 import os
@@ -34,12 +35,21 @@ class PruningStats:
 
     def log_summary(self, disease_name: str) -> None:
 
-        print(f"[Phase 2] Pruning Stats for '{disease_name}':")
-        print(f"  - P-Nodes: {self.gg_p_nodes_matched} matched, "
-              f"{self.gg_p_nodes_pruned} pruned (of {self.gg_p_nodes_total} total)")
-        print(f"  - K-Nodes: Kept {self.gg_k_nodes_kept_match} (Match) + "
-              f"{self.gg_k_nodes_kept_pathognomonic} (Pathognomonic Shadow), "
-              f"Dropped {self.gg_k_nodes_dropped} (of {self.gg_k_nodes_total} total)")
+        print(tr(
+            f"[Phase 2] Pruning Stats for '{disease_name}':",
+            f"[阶段2] '{disease_name}' 的剪枝统计："
+        ))
+        print(tr(
+            f"  - P-Nodes: {self.gg_p_nodes_matched} matched, "
+                  f"{self.gg_p_nodes_pruned} pruned (of {self.gg_p_nodes_total} total)",
+            f'  - 患者节点（P）：匹配 {self.gg_p_nodes_matched} 个，剪除 {self.gg_p_nodes_pruned} 个（共 {self.gg_p_nodes_total} 个）'
+        ))
+        print(tr(
+            f"  - K-Nodes: Kept {self.gg_k_nodes_kept_match} (Match) + "
+                  f"{self.gg_k_nodes_kept_pathognomonic} (Pathognomonic Shadow), "
+                  f"Dropped {self.gg_k_nodes_dropped} (of {self.gg_k_nodes_total} total)",
+            f'  - 知识节点（K）：保留 {self.gg_k_nodes_kept_match} 个匹配节点 + {self.gg_k_nodes_kept_pathognomonic} 个特异性影子节点，舍弃 {self.gg_k_nodes_dropped} 个（共 {self.gg_k_nodes_total} 个）'
+        ))
 
 class Phase2HybridEngine:
     """Initialize Online reasoning from Illness Graphs and add live evidence."""
@@ -92,9 +102,18 @@ class Phase2HybridEngine:
             "pathognomonic_shadows": 0
         }
 
-        print(f"[Phase2 Hybrid] Initialized with:")
-        print(f"  - Similarity threshold: {self.similarity_threshold}")
-        print(f"  - Fuzzy threshold: {self.fuzzy_threshold}")
+        print(tr(
+            f"[Phase2 Hybrid] Initialized with:",
+            '[阶段2 混合引擎] 初始化配置：'
+        ))
+        print(tr(
+            f"  - Similarity threshold: {self.similarity_threshold}",
+            f'  - 相似度阈值：{self.similarity_threshold}'
+        ))
+        print(tr(
+            f"  - Fuzzy threshold: {self.fuzzy_threshold}",
+            f'  - 模糊匹配阈值：{self.fuzzy_threshold}'
+        ))
 
     def _load_thresholds_from_config(self) -> None:
 
@@ -119,7 +138,10 @@ class Phase2HybridEngine:
                     "fuzzy_threshold", 0.80
                 )
         except Exception as e:
-            print(f"[Phase2 Hybrid] Warning: Failed to load config: {e}")
+            print(tr(
+                f"[Phase2 Hybrid] Warning: Failed to load config: {e}",
+                f'[阶段2 混合引擎] 警告：配置加载失败：{e}'
+            ))
 
     def process(self, state: Dict[str, Any]) -> Dict[str, Any]:
 
@@ -144,16 +166,25 @@ class Phase2HybridEngine:
                     "error_log": "Raw text (narrative) is missing"
                 }
 
-            print("[Phase2 Hybrid] Step 0: Initializing graph from Phase 1 result...")
+            print(tr(
+                "[Phase2 Hybrid] Step 0: Initializing graph from Phase 1 result...",
+                '[阶段2 混合引擎] 步骤0：根据阶段1结果初始化图谱...'
+            ))
             graph = MedicalGraph.from_phase1(phase1_result, raw_text)
 
             top_candidates = phase1_result.get("top_candidates", [])
             track_b_output = phase1_result.get("track_b_output", {})
             patient_p_nodes = track_b_output.get("p_nodes", [])
 
-            print(f"[Phase2 Hybrid] Patient P-Nodes count: {len(patient_p_nodes)}")
+            print(tr(
+                f"[Phase2 Hybrid] Patient P-Nodes count: {len(patient_p_nodes)}",
+                f'[阶段2 混合引擎] 患者节点（P）数量：{len(patient_p_nodes)}'
+            ))
 
-            print("[Phase2 Hybrid] Step 1: Loading Golden Graphs...")
+            print(tr(
+                "[Phase2 Hybrid] Step 1: Loading Golden Graphs...",
+                '[阶段2 混合引擎] 步骤1：加载疾病图谱...'
+            ))
             # Refined graphs take precedence; missing diseases still use live reasoning.
             golden_graphs = self.golden_loader.load_for_candidates(top_candidates)
 
@@ -161,7 +192,10 @@ class Phase2HybridEngine:
 
             all_candidate_k_nodes: List[Dict[str, Any]] = []
 
-            print("[Phase2 Hybrid] Step 2: Strict Pruning for each candidate...")
+            print(tr(
+                "[Phase2 Hybrid] Step 2: Strict Pruning for each candidate...",
+                '[阶段2 混合引擎] 步骤2：对每个候选诊断进行严格剪枝...'
+            ))
 
             for candidate_id in top_candidates:
                 d_id = f"d_{candidate_id}" if not candidate_id.startswith("d_") else candidate_id
@@ -169,11 +203,17 @@ class Phase2HybridEngine:
 
                 if golden is None:
 
-                    print(f"[Phase2 Hybrid] {d_id}: No Golden Graph, will use Live Search only")
+                    print(tr(
+                        f"[Phase2 Hybrid] {d_id}: No Golden Graph, will use Live Search only",
+                        f'[阶段2 混合引擎] {d_id}：无疾病图谱，将仅使用实时检索'
+                    ))
                     self._stats["fallback_processed"] += 1
                 else:
 
-                    print(f"[Phase2 Hybrid] {d_id}: Processing Golden Graph...")
+                    print(tr(
+                        f"[Phase2 Hybrid] {d_id}: Processing Golden Graph...",
+                        f'[阶段2 混合引擎] {d_id}：正在处理疾病图谱...'
+                    ))
                     self._stats["hybrid_processed"] += 1
 
                     filtered_k_nodes, stats = self._instantiate_golden_graph_strict(
@@ -197,7 +237,10 @@ class Phase2HybridEngine:
                     stats.log_summary(golden.pathology_name)
 
             # Step 3: Live Search Integration
-            print("[Phase2 Hybrid] Step 3: Live Search Integration...")
+            print(tr(
+                "[Phase2 Hybrid] Step 3: Live Search Integration...",
+                '[阶段2 混合引擎] 步骤3：整合实时检索结果...'
+            ))
             live_k_nodes = self._execute_live_search(graph, patient_p_nodes, d_nodes)
 
             for k in live_k_nodes:
@@ -206,24 +249,36 @@ class Phase2HybridEngine:
 
             self._stats["live_k_nodes_added"] = len(live_k_nodes)
 
-            print(f"[Phase2 Hybrid] Total candidate K-Nodes: {len(all_candidate_k_nodes)} "
-                  f"(GG: {len(all_candidate_k_nodes) - len(live_k_nodes)}, Live: {len(live_k_nodes)})")
+            print(tr(
+                f"[Phase2 Hybrid] Total candidate K-Nodes: {len(all_candidate_k_nodes)} "
+                      f"(GG: {len(all_candidate_k_nodes) - len(live_k_nodes)}, Live: {len(live_k_nodes)})",
+                f'[阶段2 混合引擎] 候选知识节点（K）总数：{len(all_candidate_k_nodes)}（疾病图谱：{len(all_candidate_k_nodes) - len(live_k_nodes)}，实时检索：{len(live_k_nodes)}）'
+            ))
 
             # Step 4: Unified Connection
-            print("[Phase2 Hybrid] Step 4: Unified Connection...")
+            print(tr(
+                "[Phase2 Hybrid] Step 4: Unified Connection...",
+                '[阶段2 混合引擎] 步骤4：统一建立连接...'
+            ))
             self._unified_connection(graph, all_candidate_k_nodes, patient_p_nodes, d_nodes)
 
-            print("[Phase2 Hybrid] Step 5: Recall Verification...")
+            print(tr(
+                "[Phase2 Hybrid] Step 5: Recall Verification...",
+                '[阶段2 混合引擎] 步骤5：回溯核验...'
+            ))
             self.live_engine._step3_recall(graph, raw_text)
 
             graph_json = graph.to_dict()
 
             graph_json["hybrid_engine_stats"] = self._stats.copy()
 
-            print(f"[Phase2 Hybrid] Complete. "
-                  f"P:{len(graph.get_p_nodes())}, "
-                  f"K:{len(graph.get_k_nodes())}, "
-                  f"D:{len(graph.get_d_nodes())}")
+            print(tr(
+                f"[Phase2 Hybrid] Complete. "
+                      f"P:{len(graph.get_p_nodes())}, "
+                      f"K:{len(graph.get_k_nodes())}, "
+                      f"D:{len(graph.get_d_nodes())}",
+                f'[阶段2 混合引擎] 已完成。患者节点（P）：{len(graph.get_p_nodes())}，知识节点（K）：{len(graph.get_k_nodes())}，疾病节点（D）：{len(graph.get_d_nodes())}'
+            ))
 
             return {
                 **state,
@@ -234,7 +289,10 @@ class Phase2HybridEngine:
         except Exception as e:
             import traceback
             error_msg = f"Phase 2 Hybrid error: {str(e)}\n{traceback.format_exc()}"
-            print(f"[Phase2 Hybrid] {error_msg}")
+            print(tr(
+                f"[Phase2 Hybrid] {error_msg}",
+                f'[阶段2 混合引擎] 处理错误：{error_msg}'
+            ))
             return {
                 **state,
                 "status": "failed",
@@ -261,8 +319,11 @@ class Phase2HybridEngine:
         stats.gg_p_nodes_total = len(gg_p_nodes)
         stats.gg_k_nodes_total = len(gg_k_nodes)
 
-        print(f"[Phase2 Hybrid] Matching {len(gg_p_nodes)} GG P-Nodes "
-              f"against {len(patient_p_nodes)} Patient P-Nodes...")
+        print(tr(
+            f"[Phase2 Hybrid] Matching {len(gg_p_nodes)} GG P-Nodes "
+                  f"against {len(patient_p_nodes)} Patient P-Nodes...",
+            f'[阶段2 混合引擎] 正在将 {len(gg_p_nodes)} 个疾病图谱患者节点（P）与 {len(patient_p_nodes)} 个当前患者节点（P）进行匹配...'
+        ))
 
         match_results, used_embedding = self.semantic_matcher.match_p_nodes(
             gg_p_nodes, patient_p_nodes
@@ -388,7 +449,10 @@ class Phase2HybridEngine:
                     "is_shadow": True
                 })
 
-                print(f"[Phase 2] Pruning: Kept Pathognomonic Shadow K-Node: '{k_content[:50]}...'")
+                print(tr(
+                    f"[Phase 2] Pruning: Kept Pathognomonic Shadow K-Node: '{k_content[:50]}...'",
+                    f"[阶段2] 剪枝：保留特异性影子知识节点（K）：'{k_content[:50]}...'"
+                ))
 
             else:
 
@@ -458,7 +522,10 @@ class Phase2HybridEngine:
                     pm_text = "\n\n---\n\n".join(pm_abstracts)
 
             except Exception as e:
-                print(f"[Phase2 Hybrid] Live Search error for {d_name}: {e}")
+                print(tr(
+                    f"[Phase2 Hybrid] Live Search error for {d_name}: {e}",
+                    f'[阶段2 混合引擎] {d_name} 的实时检索出错：{e}'
+                ))
 
             return d_id, ot_text, pm_text
 
@@ -471,7 +538,10 @@ class Phase2HybridEngine:
                     open_targets_results[d_id] = ot_text
                     pubmed_results[d_id] = pm_text
                 except Exception as e:
-                    print(f"[Phase2 Hybrid] Live Search task error: {e}")
+                    print(tr(
+                        f"[Phase2 Hybrid] Live Search task error: {e}",
+                        f'[阶段2 混合引擎] 实时检索任务出错：{e}'
+                    ))
 
         context_manager = ContextBudgetManager(max_total_tokens=30000)
         knowledge_map = context_manager.allocate_budget(
@@ -501,7 +571,10 @@ class Phase2HybridEngine:
         )
 
         if result["error"]:
-            print(f"[Phase2 Hybrid] Live Search LLM error: {result['error']}")
+            print(tr(
+                f"[Phase2 Hybrid] Live Search LLM error: {result['error']}",
+                f"[阶段2 混合引擎] 实时检索的模型调用出错：{result['error']}"
+            ))
             return live_k_nodes
 
         parsed_json = robust_parse_k_gen_response(result["content"], verbose=False)
@@ -515,7 +588,10 @@ class Phase2HybridEngine:
                 "ruled_out_candidates": k_item.get("ruled_out_candidates", [])
             })
 
-        print(f"[Phase2 Hybrid] Live Search extracted {len(live_k_nodes)} K-Nodes")
+        print(tr(
+            f"[Phase2 Hybrid] Live Search extracted {len(live_k_nodes)} K-Nodes",
+            f'[阶段2 混合引擎] 实时检索已提取 {len(live_k_nodes)} 个知识节点（K）'
+        ))
 
         return live_k_nodes
 

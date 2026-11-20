@@ -1,4 +1,6 @@
 """Record diagnostic reasoning traces."""
+
+from src.utils.console import tr
 import os
 import threading
 from datetime import datetime
@@ -65,7 +67,10 @@ class TraceLogger:
         self._case_id = case_id
         self._logs["case_id"] = case_id
         self._logs["timestamp"] = datetime.now().isoformat()
-        print(f"[TraceLogger] Started tracing case: {case_id}")
+        print(tr(
+            f"[TraceLogger] Started tracing case: {case_id}",
+            f'[推理跟踪] 已开始记录病例：{case_id}',
+        ))
 
     def log_phase1_result(
         self,
@@ -169,7 +174,10 @@ class TraceLogger:
             return
 
         self._logs["phase2"]["batch_reasoning_raw"] = raw_response[:1500] if raw_response else "(empty response)"
-        print(f"[TraceLogger] ⚠️ Recorded failed Batch Reasoning response ({len(raw_response)} chars)")
+        print(tr(
+            f"[TraceLogger] ⚠️ Recorded failed Batch Reasoning response ({len(raw_response)} chars)",
+            f'[推理跟踪] ⚠️ 已记录解析失败的批量推理回复（{len(raw_response)} 字符）',
+        ))
 
     def log_phase3_result(
         self,
@@ -202,7 +210,10 @@ class TraceLogger:
         with open(filepath, 'w', encoding='utf-8') as f:
             f.write(md_content)
 
-        print(f"[TraceLogger] Exported debug trace to: {filepath}")
+        print(tr(
+            f"[TraceLogger] Exported debug trace to: {filepath}",
+            f'[推理跟踪] 已导出调试记录至：{filepath}',
+        ))
         return filepath
 
     def _generate_markdown(self) -> str:

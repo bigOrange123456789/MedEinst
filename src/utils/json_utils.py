@@ -1,4 +1,6 @@
 """Parse structured responses from diagnostic model calls."""
+
+from src.utils.console import tr
 import json
 import re
 from typing import Dict, Any, Optional, List, Union
@@ -170,7 +172,10 @@ def _try_parse_json(json_str: str, verbose: bool = False) -> Optional[Any]:
     for suffix in truncation_fixes:
         try:
             result = json.loads(fixed_str + suffix)
-            print(f"[JSON Parser] Recovered truncated JSON with suffix: '{suffix}'")
+            print(tr(
+                f"[JSON Parser] Recovered truncated JSON with suffix: '{suffix}'",
+                f"[JSON 解析] 已用后缀 '{suffix}' 修复截断的 JSON",
+            ))
             return result
         except:
             pass
@@ -181,7 +186,10 @@ def _try_parse_json(json_str: str, verbose: bool = False) -> Optional[Any]:
         if last_complete > 0:
             truncated = fixed_str[:last_complete + 1] + ']}'
             result = json.loads(truncated)
-            print(f"[JSON Parser] Recovered by truncating to last complete element")
+            print(tr(
+                f"[JSON Parser] Recovered by truncating to last complete element",
+                '[JSON 解析] 已截取至最后一个完整元素，恢复解析',
+            ))
             return result
     except Exception:
         pass
@@ -216,7 +224,10 @@ def _try_parse_json(json_str: str, verbose: bool = False) -> Optional[Any]:
                     truncated = fixed_str[:last_brace + 1] + ']}'
                     result = json.loads(truncated)
                     k_count = len(result.get('k_nodes', []))
-                    print(f"[JSON Parser] Recovered k_nodes array (found {k_count} complete nodes)")
+                    print(tr(
+                        f"[JSON Parser] Recovered k_nodes array (found {k_count} complete nodes)",
+                        f'[JSON 解析] 已恢复 k_nodes 数组（找到 {k_count} 个完整节点）',
+                    ))
                     return result
     except Exception:
         pass
@@ -235,15 +246,24 @@ def _try_parse_json(json_str: str, verbose: bool = False) -> Optional[Any]:
                 except:
                     continue
             if k_nodes:
-                print(f"[JSON Parser] Recovered {len(k_nodes)} k_nodes via regex extraction")
+                print(tr(
+                    f"[JSON Parser] Recovered {len(k_nodes)} k_nodes via regex extraction",
+                    f'[JSON 解析] 已通过正则提取恢复 {len(k_nodes)} 个知识节点（k_nodes）',
+                ))
                 return {"k_nodes": k_nodes, "edges": []}
     except Exception:
         pass
 
     if verbose:
-        print(f"[JSON Parser] All parse attempts failed for: {json_str[:100]}...")
+        print(tr(
+            f"[JSON Parser] All parse attempts failed for: {json_str[:100]}...",
+            f'[JSON 解析] 所有解析尝试均失败，原文：{json_str[:100]}...',
+        ))
         if last_error:
-            print(f"[JSON Parser] Last error: {last_error}")
+            print(tr(
+                f"[JSON Parser] Last error: {last_error}",
+                f'[JSON 解析] 最后一次错误：{last_error}',
+            ))
 
     return None
 
@@ -251,7 +271,10 @@ def parse_json_from_text(text: str, verbose: bool = True) -> Optional[Union[Dict
 
     if not text or not isinstance(text, str):
         if verbose:
-            print("[JSON Parser] Empty or invalid input")
+            print(tr(
+                "[JSON Parser] Empty or invalid input",
+                '[JSON 解析] 输入为空或无效',
+            ))
         return None
 
     original_text = text
@@ -261,7 +284,10 @@ def parse_json_from_text(text: str, verbose: bool = True) -> Optional[Union[Dict
 
     if not text:
         if verbose:
-            print("[JSON Parser] Text is empty after cleaning LLM tags")
+            print(tr(
+                "[JSON Parser] Text is empty after cleaning LLM tags",
+                '[JSON 解析] 清理模型标签后文本为空',
+            ))
         return None
 
     json_match = re.search(r'```json\s*([\s\S]*?)\s*```', text, re.IGNORECASE)
@@ -270,7 +296,10 @@ def parse_json_from_text(text: str, verbose: bool = True) -> Optional[Union[Dict
         result = _try_parse_json(json_str, verbose)
         if result is not None:
             if verbose:
-                print(f"[JSON Parser] Successfully parsed from ```json block ({len(json_str)} chars)")
+                print(tr(
+                    f"[JSON Parser] Successfully parsed from ```json block ({len(json_str)} chars)",
+                    f'[JSON 解析] 已成功解析 ```json 代码块（{len(json_str)} 字符）',
+                ))
             return result
 
     json_match = re.search(r'```\s*([\s\S]*?)\s*```', text)
@@ -280,7 +309,10 @@ def parse_json_from_text(text: str, verbose: bool = True) -> Optional[Union[Dict
             result = _try_parse_json(json_str, verbose)
             if result is not None:
                 if verbose:
-                    print(f"[JSON Parser] Successfully parsed from ``` block ({len(json_str)} chars)")
+                    print(tr(
+                        f"[JSON Parser] Successfully parsed from ``` block ({len(json_str)} chars)",
+                        f'[JSON 解析] 已成功解析 ``` 代码块（{len(json_str)} 字符）',
+                    ))
                 return result
 
     stripped_text = text.lstrip()
@@ -291,7 +323,10 @@ def parse_json_from_text(text: str, verbose: bool = True) -> Optional[Union[Dict
             result = _try_parse_json(json_str, verbose)
             if result is not None:
                 if verbose:
-                    print(f"[JSON Parser] Successfully parsed JSON array ({len(json_str)} chars)")
+                    print(tr(
+                        f"[JSON Parser] Successfully parsed JSON array ({len(json_str)} chars)",
+                        f'[JSON 解析] 已成功解析 JSON 数组（{len(json_str)} 字符）',
+                    ))
                 return result
 
     if stripped_text.startswith('{'):
@@ -300,7 +335,10 @@ def parse_json_from_text(text: str, verbose: bool = True) -> Optional[Union[Dict
             result = _try_parse_json(json_str, verbose)
             if result is not None:
                 if verbose:
-                    print(f"[JSON Parser] Successfully parsed JSON object ({len(json_str)} chars)")
+                    print(tr(
+                        f"[JSON Parser] Successfully parsed JSON object ({len(json_str)} chars)",
+                        f'[JSON 解析] 已成功解析 JSON 对象（{len(json_str)} 字符）',
+                    ))
                 return result
 
     json_str = _extract_json_braces(text, '{', '}')
@@ -308,7 +346,10 @@ def parse_json_from_text(text: str, verbose: bool = True) -> Optional[Union[Dict
         result = _try_parse_json(json_str, verbose)
         if result is not None:
             if verbose:
-                print(f"[JSON Parser] Successfully parsed embedded JSON object ({len(json_str)} chars)")
+                print(tr(
+                    f"[JSON Parser] Successfully parsed embedded JSON object ({len(json_str)} chars)",
+                    f'[JSON 解析] 已成功解析内嵌 JSON 对象（{len(json_str)} 字符）',
+                ))
             return result
 
     json_str = _extract_json_braces(text, '[', ']')
@@ -316,22 +357,40 @@ def parse_json_from_text(text: str, verbose: bool = True) -> Optional[Union[Dict
         result = _try_parse_json(json_str, verbose)
         if result is not None:
             if verbose:
-                print(f"[JSON Parser] Successfully parsed embedded JSON array ({len(json_str)} chars)")
+                print(tr(
+                    f"[JSON Parser] Successfully parsed embedded JSON array ({len(json_str)} chars)",
+                    f'[JSON 解析] 已成功解析内嵌 JSON 数组（{len(json_str)} 字符）',
+                ))
             return result
 
     result = _try_parse_json(text, verbose)
     if result is not None:
         if verbose:
-            print(f"[JSON Parser] Successfully parsed entire text ({len(text)} chars)")
+            print(tr(
+                f"[JSON Parser] Successfully parsed entire text ({len(text)} chars)",
+                f'[JSON 解析] 已成功解析完整文本（{len(text)} 字符）',
+            ))
         return result
 
     if verbose:
-        print(f"[JSON Parser] All parsing methods failed")
-        print(f"[JSON Parser] Original text length: {len(original_text)}")
-        print(f"[JSON Parser] Text preview (first 500 chars):")
+        print(tr(
+            f"[JSON Parser] All parsing methods failed",
+            '[JSON 解析] 所有解析方法均失败',
+        ))
+        print(tr(
+            f"[JSON Parser] Original text length: {len(original_text)}",
+            f'[JSON 解析] 原文长度：{len(original_text)}',
+        ))
+        print(tr(
+            f"[JSON Parser] Text preview (first 500 chars):",
+            '[JSON 解析] 原文预览（前 500 字符）：',
+        ))
         print(f"  {original_text[:500]}")
         if len(original_text) > 500:
-            print(f"  ... (truncated)")
+            print(tr(
+                f"  ... (truncated)",
+                '  ...（已截断）',
+            ))
 
     return None
 
@@ -339,7 +398,10 @@ def parse_json_array_from_text(text: str, verbose: bool = True) -> Optional[List
 
     if not text or not isinstance(text, str):
         if verbose:
-            print("[JSON Parser] Empty or invalid input for array parsing")
+            print(tr(
+                "[JSON Parser] Empty or invalid input for array parsing",
+                '[JSON 解析] 数组解析的输入为空或无效',
+            ))
         return None
 
     original_text = text
@@ -348,7 +410,10 @@ def parse_json_array_from_text(text: str, verbose: bool = True) -> Optional[List
 
     if not text:
         if verbose:
-            print("[JSON Parser] Text is empty after cleaning LLM tags")
+            print(tr(
+                "[JSON Parser] Text is empty after cleaning LLM tags",
+                '[JSON 解析] 清理模型标签后文本为空',
+            ))
         return None
 
     json_match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', text, re.IGNORECASE)
@@ -358,7 +423,10 @@ def parse_json_array_from_text(text: str, verbose: bool = True) -> Optional[List
             result = _try_parse_json(json_str, verbose)
             if isinstance(result, list):
                 if verbose:
-                    print(f"[JSON Parser] Successfully parsed array from code block ({len(json_str)} chars)")
+                    print(tr(
+                        f"[JSON Parser] Successfully parsed array from code block ({len(json_str)} chars)",
+                        f'[JSON 解析] 已成功从代码块解析数组（{len(json_str)} 字符）',
+                    ))
                 return result
 
     stripped_text = text.lstrip()
@@ -368,7 +436,10 @@ def parse_json_array_from_text(text: str, verbose: bool = True) -> Optional[List
             result = _try_parse_json(json_str, verbose)
             if isinstance(result, list):
                 if verbose:
-                    print(f"[JSON Parser] Successfully parsed JSON array directly ({len(json_str)} chars)")
+                    print(tr(
+                        f"[JSON Parser] Successfully parsed JSON array directly ({len(json_str)} chars)",
+                        f'[JSON 解析] 已直接解析 JSON 数组（{len(json_str)} 字符）',
+                    ))
                 return result
 
     json_str = _extract_json_braces(text, '[', ']')
@@ -376,14 +447,20 @@ def parse_json_array_from_text(text: str, verbose: bool = True) -> Optional[List
         result = _try_parse_json(json_str, verbose)
         if isinstance(result, list):
             if verbose:
-                print(f"[JSON Parser] Successfully parsed embedded JSON array ({len(json_str)} chars)")
+                print(tr(
+                    f"[JSON Parser] Successfully parsed embedded JSON array ({len(json_str)} chars)",
+                    f'[JSON 解析] 已成功解析内嵌 JSON 数组（{len(json_str)} 字符）',
+                ))
             return result
 
     parsed = parse_json_from_text(text, verbose=False)
 
     if isinstance(parsed, list):
         if verbose:
-            print(f"[JSON Parser] Parsed as array via general parser")
+            print(tr(
+                f"[JSON Parser] Parsed as array via general parser",
+                '[JSON 解析] 已通过通用解析器解析为数组',
+            ))
         return parsed
 
     if isinstance(parsed, dict):
@@ -393,19 +470,31 @@ def parse_json_array_from_text(text: str, verbose: bool = True) -> Optional[List
         for key in array_keys:
             if key in parsed and isinstance(parsed[key], list):
                 if verbose:
-                    print(f"[JSON Parser] Extracted array from '{key}' field")
+                    print(tr(
+                        f"[JSON Parser] Extracted array from '{key}' field",
+                        f"[JSON 解析] 已从 '{key}' 字段提取数组",
+                    ))
                 return parsed[key]
 
         if len(parsed) == 1:
             only_value = list(parsed.values())[0]
             if isinstance(only_value, list):
                 if verbose:
-                    print(f"[JSON Parser] Extracted array from single-key dict")
+                    print(tr(
+                        f"[JSON Parser] Extracted array from single-key dict",
+                        '[JSON 解析] 已从单键字典提取数组',
+                    ))
                 return only_value
 
     if verbose:
-        print(f"[JSON Parser] Failed to parse as array. Result type: {type(parsed)}")
-        print(f"[JSON Parser] Original text preview: {original_text[:300]}...")
+        print(tr(
+            f"[JSON Parser] Failed to parse as array. Result type: {type(parsed)}",
+            f'[JSON 解析] 无法解析为数组，结果类型：{type(parsed)}',
+        ))
+        print(tr(
+            f"[JSON Parser] Original text preview: {original_text[:300]}...",
+            f'[JSON 解析] 原文预览：{original_text[:300]}...',
+        ))
 
     return None
 
@@ -442,7 +531,10 @@ def extract_json_field(text: str, field_name: str, verbose: bool = False) -> Opt
                 return value_str
 
     if verbose:
-        print(f"[JSON Parser] Failed to extract field '{field_name}'")
+        print(tr(
+            f"[JSON Parser] Failed to extract field '{field_name}'",
+            f"[JSON 解析] 无法提取字段 '{field_name}'",
+        ))
 
     return None
 
@@ -452,7 +544,10 @@ def safe_json_loads(json_str: str, default: Any = None, verbose: bool = False) -
         return json.loads(json_str)
     except (json.JSONDecodeError, TypeError) as e:
         if verbose:
-            print(f"[JSON Parser] safe_json_loads failed: {e}")
+            print(tr(
+                f"[JSON Parser] safe_json_loads failed: {e}",
+                f'[JSON 解析] safe_json_loads 解析失败：{e}',
+            ))
         return default
 
 def format_json_for_prompt(data: Union[Dict, List], indent: int = 2) -> str:
@@ -471,13 +566,19 @@ def robust_parse_p_nodes(text: str, verbose: bool = True) -> List[Dict[str, Any]
         p_nodes = parsed.get('p_nodes', [])
         if isinstance(p_nodes, list) and len(p_nodes) > 0:
             if verbose:
-                print(f"[JSON Parser] Extracted {len(p_nodes)} P-Nodes from complete JSON")
+                print(tr(
+                    f"[JSON Parser] Extracted {len(p_nodes)} P-Nodes from complete JSON",
+                    f'[JSON 解析] 已从完整 JSON 提取 {len(p_nodes)} 个患者特征节点（P 节点）',
+                ))
             return p_nodes
 
     p_nodes = extract_json_field(text, 'p_nodes', verbose=False)
     if isinstance(p_nodes, list) and len(p_nodes) > 0:
         if verbose:
-            print(f"[JSON Parser] Extracted {len(p_nodes)} P-Nodes via field extraction")
+            print(tr(
+                f"[JSON Parser] Extracted {len(p_nodes)} P-Nodes via field extraction",
+                f'[JSON 解析] 已通过字段提取获得 {len(p_nodes)} 个患者特征节点（P 节点）',
+            ))
         return p_nodes
 
     array_result = parse_json_array_from_text(text, verbose=False)
@@ -485,7 +586,10 @@ def robust_parse_p_nodes(text: str, verbose: bool = True) -> List[Dict[str, Any]
 
         if _looks_like_p_nodes(array_result):
             if verbose:
-                print(f"[JSON Parser] Extracted {len(array_result)} P-Nodes from array")
+                print(tr(
+                    f"[JSON Parser] Extracted {len(array_result)} P-Nodes from array",
+                    f'[JSON 解析] 已从数组提取 {len(array_result)} 个患者特征节点（P 节点）',
+                ))
             return array_result
 
     p_nodes = []
@@ -502,11 +606,17 @@ def robust_parse_p_nodes(text: str, verbose: bool = True) -> List[Dict[str, Any]
 
     if p_nodes:
         if verbose:
-            print(f"[JSON Parser] Extracted {len(p_nodes)} P-Nodes via regex fallback")
+            print(tr(
+                f"[JSON Parser] Extracted {len(p_nodes)} P-Nodes via regex fallback",
+                f'[JSON 解析] 已通过正则备用方法提取 {len(p_nodes)} 个患者特征节点（P 节点）',
+            ))
         return p_nodes
 
     if verbose:
-        print(f"[JSON Parser] Failed to extract any P-Nodes")
+        print(tr(
+            f"[JSON Parser] Failed to extract any P-Nodes",
+            '[JSON 解析] 未能提取任何患者特征节点（P 节点）',
+        ))
 
     return []
 
@@ -545,7 +655,10 @@ def robust_parse_track_a_response(text: str, verbose: bool = True) -> Dict[str, 
 
         if result["top_candidates"] and result["final_diagnosis_id"]:
             if verbose:
-                print(f"[JSON Parser] Track A: Complete parse success")
+                print(tr(
+                    f"[JSON Parser] Track A: Complete parse success",
+                    '[JSON 解析] 路径 A：完整解析成功',
+                ))
             return result
 
     id_patterns = [
@@ -643,11 +756,17 @@ def robust_parse_track_a_response(text: str, verbose: bool = True) -> Dict[str, 
 
     if verbose:
         if result["top_candidates"] or result["final_diagnosis_id"]:
-            print(f"[JSON Parser] Track A: Fallback extraction - "
+            print(tr(
+                f"[JSON Parser] Track A: Fallback extraction - "
                   f"candidates: {len(result['top_candidates'])}, "
-                  f"diagnosis_id: {result['final_diagnosis_id']}")
+                  f"diagnosis_id: {result['final_diagnosis_id']}",
+                f"[JSON 解析] 路径 A：备用提取结果 - 候选：{len(result['top_candidates'])}，诊断 ID：{result['final_diagnosis_id']}",
+            ))
         else:
-            print(f"[JSON Parser] Track A: Failed to extract key fields")
+            print(tr(
+                f"[JSON Parser] Track A: Failed to extract key fields",
+                '[JSON 解析] 路径 A：关键字段提取失败',
+            ))
 
     return result
 
@@ -667,8 +786,11 @@ def robust_parse_k_gen_response(text: str, verbose: bool = True) -> Dict[str, An
 
         if result["k_nodes"] or result["edges"]:
             if verbose:
-                print(f"[JSON Parser] K-Gen: Extracted {len(result['k_nodes'])} K-Nodes, "
-                      f"{len(result['edges'])} edges")
+                print(tr(
+                    f"[JSON Parser] K-Gen: Extracted {len(result['k_nodes'])} K-Nodes, "
+                      f"{len(result['edges'])} edges",
+                    f"[JSON 解析] 知识生成：已提取 {len(result['k_nodes'])} 个知识节点（K 节点）、{len(result['edges'])} 条边",
+                ))
             return result
 
     k_nodes = extract_json_field(text, 'k_nodes', verbose=False)
@@ -681,10 +803,16 @@ def robust_parse_k_gen_response(text: str, verbose: bool = True) -> Dict[str, An
 
     if result["k_nodes"] or result["edges"]:
         if verbose:
-            print(f"[JSON Parser] K-Gen (fallback): Extracted {len(result['k_nodes'])} K-Nodes, "
-                  f"{len(result['edges'])} edges")
+            print(tr(
+                f"[JSON Parser] K-Gen (fallback): Extracted {len(result['k_nodes'])} K-Nodes, "
+                  f"{len(result['edges'])} edges",
+                f"[JSON 解析] 知识生成（备用方法）：已提取 {len(result['k_nodes'])} 个知识节点（K 节点）、{len(result['edges'])} 条边",
+            ))
     else:
         if verbose:
-            print(f"[JSON Parser] K-Gen: Failed to extract K-Nodes or edges")
+            print(tr(
+                f"[JSON Parser] K-Gen: Failed to extract K-Nodes or edges",
+                '[JSON 解析] 知识生成：知识节点或边提取失败',
+            ))
 
     return result

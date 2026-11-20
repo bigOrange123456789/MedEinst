@@ -71,6 +71,8 @@ python scripts/run_ecr_agent.py \
 
 运行器会将病例级别的预测写入 `results_detail.jsonl`，并将运行摘要写入 `inference_summary.json`。关于预期的文件与目录结构，请参阅[产物布局](docs/artifacts.md)。三个基准指标在论文中已给出定义；本次发布的智能体代码中不包含单独的评估工具。
 
+控制台默认以英文输出；添加 `--console-language zh` 可切换为中文，`--console-language en` 切回英文。查看中文帮助：`python scripts/run_ecr_agent.py --console-language zh --help`。Windows CMD 示例见[控制台语言配置](docs/configuration_zh.md#控制台语言)。
+
 ## 🔄 离线 CGME：构建知识与记忆
 
 仓库自带的 `data/medeinst_support_853.json` 保留了论文中固定的支持集选择。从[参考集](https://huggingface.co/datasets/zhui711/MedEinst)下载 `train.jsonl`，然后运行：

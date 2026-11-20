@@ -43,6 +43,30 @@ YAML 中的相对路径相对于 YAML 文件本身解析。CLI 中的相对路�
 
 图精化支持 `--input-dir`、`--output-dir` 和 `--log-dir`。
 
+## 控制台语言
+
+`scripts/run_ecr_agent.py` 支持 `--console-language {en,zh}`：`en` 以英文为主（默认），`zh` 以中文为主。该参数控制启动信息、各推理阶段日志、检索与记忆库提示、进度条以及最终统计，并对并行工作线程生效。
+
+Windows CMD 中使用中文输出：
+
+```bat
+python scripts/run_ecr_agent.py ^
+  --benchmark-set "G:\Codex\MedEinst_dataset\test.jsonl" ^
+  --output-dir "G:\Codex\MedEinst\output_smoke" ^
+  --limit 1 ^
+  --console-language zh
+```
+
+切换为英文时，将最后一行改为 `--console-language en`，也可省略该参数。CMD 中每个续行符 `^` 必须位于行尾，其后不要加空格。
+
+查看中文参数帮助：
+
+```bat
+python scripts/run_ecr_agent.py --console-language zh --help
+```
+
+该选项仅改变控制台显示语言，不翻译模型输入、疾病名称、模型回复、第三方异常原文或保存的 JSON 字段。Python 异常堆栈也保留原文，方便排查问题。Windows 下脚本将标准输出和错误输出设为 UTF-8；重定向保存的日志也使用 UTF-8。
+
 ## 外部知识源
 
 PubMed 检索使用 `PUBMED_EMAIL` 以及可选的 `PUBMED_API_KEY`。OpenTargets 检索使用其已配置的公共服务端点。

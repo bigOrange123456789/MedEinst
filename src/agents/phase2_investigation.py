@@ -1,4 +1,5 @@
 """Live causal graph reasoning used to bootstrap CGME."""
+from src.utils.console import tr
 import json
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -80,14 +81,23 @@ class Phase2GraphReasoning:
                     "error_log": "Raw text (narrative) is missing"
                 }
 
-            print("[Phase2] Initializing graph from Phase 1 result...")
+            print(tr(
+                "[Phase2] Initializing graph from Phase 1 result...",
+                '[阶段2] 根据阶段1结果初始化图谱...'
+            ))
             graph = MedicalGraph.from_phase1(phase1_result, raw_text)
 
-            print("[Phase2] Step 2: Unified Investigation (Divide & Conquer)...")
+            print(tr(
+                "[Phase2] Step 2: Unified Investigation (Divide & Conquer)...",
+                '[阶段2] 步骤2：统一调查（分治处理）...'
+            ))
             self._step2_unified_investigation(graph)
 
             # Backward recall checks whether missing expected evidence appears in the narrative.
-            print("[Phase2] Step 3: Recall (Backtracking Shadow Nodes)...")
+            print(tr(
+                "[Phase2] Step 3: Recall (Backtracking Shadow Nodes)...",
+                '[阶段2] 步骤3：回溯（追踪影子节点）...'
+            ))
             self._step3_recall(graph, raw_text)
 
             graph_json = graph.to_dict()
@@ -95,13 +105,19 @@ class Phase2GraphReasoning:
             graph_json["knowledge_sources"] = self.knowledge_sources
             if self.low_evidence_diseases:
                 graph_json["low_evidence_diseases"] = self.low_evidence_diseases
-                print(f"[Phase2] WARNING: {len(self.low_evidence_diseases)} diseases have low evidence: "
-                      f"{self.low_evidence_diseases}")
+                print(tr(
+                    f"[Phase2] WARNING: {len(self.low_evidence_diseases)} diseases have low evidence: "
+                          f"{self.low_evidence_diseases}",
+                    f'[阶段2] 警告：{len(self.low_evidence_diseases)} 个疾病的证据不足：{self.low_evidence_diseases}'
+                ))
 
-            print(f"[Phase2] Graph construction complete. "
-                  f"P-Nodes: {len(graph.get_p_nodes())}, "
-                  f"K-Nodes: {len(graph.get_k_nodes())}, "
-                  f"D-Nodes: {len(graph.get_d_nodes())}")
+            print(tr(
+                f"[Phase2] Graph construction complete. "
+                      f"P-Nodes: {len(graph.get_p_nodes())}, "
+                      f"K-Nodes: {len(graph.get_k_nodes())}, "
+                      f"D-Nodes: {len(graph.get_d_nodes())}",
+                f'[阶段2] 图谱构建完成。患者节点（P）：{len(graph.get_p_nodes())}，知识节点（K）：{len(graph.get_k_nodes())}，疾病节点（D）：{len(graph.get_d_nodes())}'
+            ))
 
             return {
                 **state,
@@ -112,7 +128,10 @@ class Phase2GraphReasoning:
         except Exception as e:
             import traceback
             error_msg = f"Phase 2 error: {str(e)}\n{traceback.format_exc()}"
-            print(f"[Phase2] {error_msg}")
+            print(tr(
+                f"[Phase2] {error_msg}",
+                f'[阶段2] 处理错误：{error_msg}'
+            ))
             return {
                 **state,
                 "status": "failed",
@@ -125,14 +144,26 @@ class Phase2GraphReasoning:
         p_nodes = graph.get_p_nodes()
 
         if not d_nodes:
-            print("[Phase2 Step2] No D-Nodes found, skipping investigation...")
+            print(tr(
+                "[Phase2 Step2] No D-Nodes found, skipping investigation...",
+                '[阶段2 步骤2] 未找到疾病节点（D），跳过调查...'
+            ))
             return
 
-        print(f"[Phase2 Step2] Processing {len(d_nodes)} candidates...")
+        print(tr(
+            f"[Phase2 Step2] Processing {len(d_nodes)} candidates...",
+            f'[阶段2 步骤2] 正在处理 {len(d_nodes)} 个候选诊断...'
+        ))
 
         # ==================== Phase 2.1: Canonical Retrieval (with Exact Match) ====================
-        print("[Phase2 Step2.1] Canonical Retrieval (Open Targets + PubMed Review)...")
-        print("[Phase2 Step2.1] Using Exact Match validation + Synonym exhaustion...")
+        print(tr(
+            "[Phase2 Step2.1] Canonical Retrieval (Open Targets + PubMed Review)...",
+            '[阶段2 步骤2.1] 检索规范知识（Open Targets + PubMed 综述）...'
+        ))
+        print(tr(
+            "[Phase2 Step2.1] Using Exact Match validation + Synonym exhaustion...",
+            '[阶段2 步骤2.1] 使用精确匹配校验，并遍历同义词...'
+        ))
 
         open_targets_results: Dict[str, str] = {}
         pubmed_results: Dict[str, str] = {}
@@ -152,7 +183,10 @@ class Phase2GraphReasoning:
             try:
 
                 search_terms = get_all_search_terms_for_disease(d_id, d_name)
-                print(f"[Phase2 Step2.1] {d_name}: Trying {len(search_terms)} search terms...")
+                print(tr(
+                    f"[Phase2 Step2.1] {d_name}: Trying {len(search_terms)} search terms...",
+                    f'[阶段2 步骤2.1] {d_name}：正在尝试 {len(search_terms)} 个检索词...'
+                ))
 
                 ot_result, raw_response = self.open_targets_tool.get_disease_description_with_raw(
                     d_name,
@@ -163,7 +197,10 @@ class Phase2GraphReasoning:
                     ot_text = ot_result
                     source = "OpenTargets"
                 else:
-                    print(f"[Phase2 Step2.1] {d_name}: Open Targets match FAILED or no data")
+                    print(tr(
+                        f"[Phase2 Step2.1] {d_name}: Open Targets match FAILED or no data",
+                        f'[阶段2 步骤2.1] {d_name}：Open Targets 匹配失败或无数据'
+                    ))
 
                 time.sleep(0.1)
                 pm_abstracts, pm_level = self._search_pubmed_waterfall(d_name, d_id)
@@ -176,7 +213,10 @@ class Phase2GraphReasoning:
                         source = f"{source}+PubMed_{pm_level}"
 
             except Exception as e:
-                print(f"[Phase2 Step2.1] Error retrieving {d_name}: {e}")
+                print(tr(
+                    f"[Phase2 Step2.1] Error retrieving {d_name}: {e}",
+                    f'[阶段2 步骤2.1] 检索 {d_name} 时出错：{e}'
+                ))
 
             return d_id, ot_text, pm_text, source, raw_response
 
@@ -203,13 +243,22 @@ class Phase2GraphReasoning:
                     )
 
                     status = "✓" if source != "None" else "✗"
-                    print(f"[Phase2 Step2.1] {status} {d_name}: {source}")
+                    print(tr(
+                        f"[Phase2 Step2.1] {status} {d_name}: {source}",
+                        f'[阶段2 步骤2.1] {status} {d_name}：{source}'
+                    ))
 
                 except Exception as e:
-                    print(f"[Phase2 Step2.1] Task error: {e}")
+                    print(tr(
+                        f"[Phase2 Step2.1] Task error: {e}",
+                        f'[阶段2 步骤2.1] 任务出错：{e}'
+                    ))
 
         # ==================== Phase 2.2: Batch LLM Filtering (Single Call) ====================
-        print("[Phase2 Step2.2] Batch LLM Filtering (single call, removing low-quality content)...")
+        print(tr(
+            "[Phase2 Step2.2] Batch LLM Filtering (single call, removing low-quality content)...",
+            '[阶段2 步骤2.2] 使用模型批量筛选（单次调用，移除低质量内容）...'
+        ))
 
         filtered_pubmed: Dict[str, str] = {}
 
@@ -226,7 +275,10 @@ class Phase2GraphReasoning:
                 filter_ids.append(d_id)
 
         if filter_snippets:
-            print(f"[Phase2 Step2.2] Batch filtering {len(filter_snippets)} snippets...")
+            print(tr(
+                f"[Phase2 Step2.2] Batch filtering {len(filter_snippets)} snippets...",
+                f'[阶段2 步骤2.2] 正在批量筛选 {len(filter_snippets)} 个片段...'
+            ))
 
             batch_filter_prompt = build_batch_filter_prompt(filter_snippets)
 
@@ -244,8 +296,14 @@ class Phase2GraphReasoning:
             )
 
             if result["error"]:
-                print(f"[Phase2 Step2.2] Batch Filter LLM error: {result['error']}")
-                print("[Phase2 Step2.2] Defaulting to DROP ALL (宁缺毋滥)")
+                print(tr(
+                    f"[Phase2 Step2.2] Batch Filter LLM error: {result['error']}",
+                    f"[阶段2 步骤2.2] 批量筛选的模型调用出错：{result['error']}"
+                ))
+                print(tr(
+                    "[Phase2 Step2.2] Defaulting to DROP ALL (宁缺毋滥)",
+                    '[阶段2 步骤2.2] 默认全部舍弃（宁缺毋滥）'
+                ))
 
                 filter_results = [False] * len(filter_snippets)
             else:
@@ -254,17 +312,29 @@ class Phase2GraphReasoning:
                     result["content"],
                     expected_count=len(filter_snippets)
                 )
-                print(f"[Phase2 Step2.2] Filter results: {filter_results}")
+                print(tr(
+                    f"[Phase2 Step2.2] Filter results: {filter_results}",
+                    f'[阶段2 步骤2.2] 筛选结果：{filter_results}'
+                ))
 
             for i, (d_id, keep) in enumerate(zip(filter_ids, filter_results)):
                 if keep:
                     filtered_pubmed[d_id] = pubmed_results[d_id]
-                    print(f"[Phase2 Step2.2] {d_id}: KEEP ✓")
+                    print(tr(
+                        f"[Phase2 Step2.2] {d_id}: KEEP ✓",
+                        f'[阶段2 步骤2.2] {d_id}：保留 ✓'
+                    ))
                 else:
                     filtered_pubmed[d_id] = ""
-                    print(f"[Phase2 Step2.2] {d_id}: DROP ✗")
+                    print(tr(
+                        f"[Phase2 Step2.2] {d_id}: DROP ✗",
+                        f'[阶段2 步骤2.2] {d_id}：舍弃 ✗'
+                    ))
         else:
-            print("[Phase2 Step2.2] No PubMed texts to filter")
+            print(tr(
+                "[Phase2 Step2.2] No PubMed texts to filter",
+                '[阶段2 步骤2.2] 没有需要筛选的 PubMed 文本'
+            ))
 
         for d_id in pubmed_results:
             if d_id not in filtered_pubmed:
@@ -276,7 +346,10 @@ class Phase2GraphReasoning:
                 self.low_evidence_diseases.append(d_node["name"])
 
         # ==================== Phase 2.3: Context Budget Allocation ====================
-        print("[Phase2 Step2.3] Allocating context budget...")
+        print(tr(
+            "[Phase2 Step2.3] Allocating context budget...",
+            '[阶段2 步骤2.3] 正在分配上下文预算...'
+        ))
 
         knowledge_map = self.context_manager.allocate_budget(
             candidates=d_nodes,
@@ -285,7 +358,10 @@ class Phase2GraphReasoning:
         )
 
         # ==================== Phase 2.4: Batch Reasoning (temperature=0.0) ====================
-        print("[Phase2 Step2.4] Batch Reasoning (single LLM call, temperature=0.0)...")
+        print(tr(
+            "[Phase2 Step2.4] Batch Reasoning (single LLM call, temperature=0.0)...",
+            '[阶段2 步骤2.4] 批量推理（单次模型调用，温度参数=0.0）...'
+        ))
 
         user_prompt = build_batch_prompt(
             candidates=d_nodes,
@@ -307,7 +383,10 @@ class Phase2GraphReasoning:
         )
 
         if result["error"]:
-            print(f"[Phase2 Step2.4] LLM error: {result['error']}")
+            print(tr(
+                f"[Phase2 Step2.4] LLM error: {result['error']}",
+                f"[阶段2 步骤2.4] 模型调用错误：{result['error']}"
+            ))
 
             TraceLogger.get_instance().log_batch_reasoning_raw(
                 f"LLM Error: {result['error']}",
@@ -316,12 +395,18 @@ class Phase2GraphReasoning:
             return
 
         response_content = result["content"]
-        print(f"[Phase2 Step2.4] LLM response length: {len(response_content)} chars")
+        print(tr(
+            f"[Phase2 Step2.4] LLM response length: {len(response_content)} chars",
+            f'[阶段2 步骤2.4] 模型响应长度：{len(response_content)} 个字符'
+        ))
 
         parsed_json = robust_parse_k_gen_response(response_content, verbose=True)
 
         if not parsed_json.get("k_nodes"):
-            print("[Phase2 Step2.4] No K-Nodes extracted from Batch Reasoning")
+            print(tr(
+                "[Phase2 Step2.4] No K-Nodes extracted from Batch Reasoning",
+                '[阶段2 步骤2.4] 批量推理未提取出知识节点（K）'
+            ))
 
             TraceLogger.get_instance().log_batch_reasoning_raw(
                 response_content,
@@ -330,7 +415,10 @@ class Phase2GraphReasoning:
             return
 
         # ==================== Phase 2.5: Graph Update ====================
-        print("[Phase2 Step2.5] Updating graph with extracted K-Nodes...")
+        print(tr(
+            "[Phase2 Step2.5] Updating graph with extracted K-Nodes...",
+            '[阶段2 步骤2.5] 正在将提取的知识节点（K）加入图谱...'
+        ))
 
         edges_created = self._process_batch_response(graph, parsed_json, p_nodes, d_nodes)
 
@@ -350,7 +438,10 @@ class Phase2GraphReasoning:
             edges_created=edges_created
         )
 
-        print(f"[Phase2 Step2.5] Created {edges_created} edges")
+        print(tr(
+            f"[Phase2 Step2.5] Created {edges_created} edges",
+            f'[阶段2 步骤2.5] 已创建 {edges_created} 条边'
+        ))
 
     def _search_pubmed_waterfall(
         self,
@@ -363,22 +454,37 @@ class Phase2GraphReasoning:
         queries = query_builder.get_all_queries()
 
         for level_name, query, max_results in queries:
-            print(f"[Phase2 PubMed] Trying Level: {level_name}...")
+            print(tr(
+                f"[Phase2 PubMed] Trying Level: {level_name}...",
+                f'[阶段2 PubMed] 正在尝试检索层级：{level_name}...'
+            ))
 
             try:
                 abstracts = self._execute_pubmed_search(query, max_results)
 
                 if abstracts and len(abstracts) > 0:
-                    print(f"[Phase2 PubMed] ✓ Found {len(abstracts)} results at {level_name}")
+                    print(tr(
+                        f"[Phase2 PubMed] ✓ Found {len(abstracts)} results at {level_name}",
+                        f'[阶段2 PubMed] ✓ 找到 {len(abstracts)} 条结果，检索层级：{level_name}'
+                    ))
                     return abstracts, level_name
                 else:
-                    print(f"[Phase2 PubMed] ✗ No results at {level_name}, trying next level...")
+                    print(tr(
+                        f"[Phase2 PubMed] ✗ No results at {level_name}, trying next level...",
+                        f'[阶段2 PubMed] ✗ 在 {level_name} 层级未找到结果，尝试下一层级...'
+                    ))
 
             except Exception as e:
-                print(f"[Phase2 PubMed] Error at {level_name}: {e}")
+                print(tr(
+                    f"[Phase2 PubMed] Error at {level_name}: {e}",
+                    f'[阶段2 PubMed] 在 {level_name} 层级出错：{e}'
+                ))
                 continue
 
-        print(f"[Phase2 PubMed] ✗ All levels exhausted for '{disease_name}'")
+        print(tr(
+            f"[Phase2 PubMed] ✗ All levels exhausted for '{disease_name}'",
+            f"[阶段2 PubMed] ✗ 已尝试 '{disease_name}' 的所有检索层级"
+        ))
         return [], "None"
 
     def _execute_pubmed_search(self, query: str, max_results: int) -> List[str]:
@@ -409,7 +515,10 @@ class Phase2GraphReasoning:
             return abstracts
 
         except Exception as e:
-            print(f"[Phase2] PubMed search error: {e}")
+            print(tr(
+                f"[Phase2] PubMed search error: {e}",
+                f'[阶段2] PubMed 检索出错：{e}'
+            ))
             return []
 
     def _search_pubmed_review_only(self, query: str, max_results: int = 3) -> List[str]:
@@ -469,7 +578,10 @@ class Phase2GraphReasoning:
             return abstract_text
 
         except Exception as e:
-            print(f"[Phase2] Error fetching PMID {pmid}: {e}")
+            print(tr(
+                f"[Phase2] Error fetching PMID {pmid}: {e}",
+                f'[阶段2] 获取 PMID {pmid} 时出错：{e}'
+            ))
             return ""
 
     def _process_batch_response(
@@ -490,7 +602,10 @@ class Phase2GraphReasoning:
 
         created_k_ids = []
 
-        print(f"[Phase2] Processing {len(k_nodes_data)} K-Nodes from Batch Reasoning...")
+        print(tr(
+            f"[Phase2] Processing {len(k_nodes_data)} K-Nodes from Batch Reasoning...",
+            f'[阶段2] 正在处理批量推理得到的 {len(k_nodes_data)} 个知识节点（K）...'
+        ))
 
         for idx, k_item in enumerate(k_nodes_data):
             k_content = k_item.get("content", "")
@@ -515,9 +630,15 @@ class Phase2GraphReasoning:
                 if resolved_id:
                     graph.add_kd_edge(k_id, resolved_id, relation="Support", strength=importance)
                     kd_edges_created += 1
-                    print(f"[Phase2] K-D Edge: {k_id} --Support--> {resolved_id}")
+                    print(tr(
+                        f"[Phase2] K-D Edge: {k_id} --Support--> {resolved_id}",
+                        f'[阶段2] 知识-疾病边（K-D）：{k_id} --支持--> {resolved_id}'
+                    ))
                 else:
-                    print(f"[Phase2] ⚠️ Failed to resolve Support target: '{target_id}'")
+                    print(tr(
+                        f"[Phase2] ⚠️ Failed to resolve Support target: '{target_id}'",
+                        f"[阶段2] ⚠️ 无法解析支持关系的目标：'{target_id}'"
+                    ))
 
             ruled_out = k_item.get("ruled_out_candidates", [])
             for target_id in ruled_out:
@@ -525,11 +646,20 @@ class Phase2GraphReasoning:
                 if resolved_id:
                     graph.add_kd_edge(k_id, resolved_id, relation="Rule_Out", strength=importance)
                     kd_edges_created += 1
-                    print(f"[Phase2] K-D Edge: {k_id} --Rule_Out--> {resolved_id}")
+                    print(tr(
+                        f"[Phase2] K-D Edge: {k_id} --Rule_Out--> {resolved_id}",
+                        f'[阶段2] 知识-疾病边（K-D）：{k_id} --排除--> {resolved_id}'
+                    ))
                 else:
-                    print(f"[Phase2] ⚠️ Failed to resolve Rule_Out target: '{target_id}'")
+                    print(tr(
+                        f"[Phase2] ⚠️ Failed to resolve Rule_Out target: '{target_id}'",
+                        f"[阶段2] ⚠️ 无法解析排除关系的目标：'{target_id}'"
+                    ))
 
-        print(f"[Phase2] Created {kd_edges_created} K-D edges")
+        print(tr(
+            f"[Phase2] Created {kd_edges_created} K-D edges",
+            f'[阶段2] 已创建 {kd_edges_created} 条知识-疾病边（K-D）'
+        ))
 
         for k_id in created_k_ids:
             k_node = graph.get_k_node_by_id(k_id)
@@ -557,7 +687,10 @@ class Phase2GraphReasoning:
                 graph.add_pk_edge(shadow_p_id, k_id, relation="Void")
                 pk_edges_created += 1
 
-        print(f"[Phase2] Created {pk_edges_created} P-K edges")
+        print(tr(
+            f"[Phase2] Created {pk_edges_created} P-K edges",
+            f'[阶段2] 已创建 {pk_edges_created} 条患者-知识边（P-K）'
+        ))
         edges_created = kd_edges_created + pk_edges_created
 
         return edges_created
@@ -590,10 +723,16 @@ class Phase2GraphReasoning:
         void_k_nodes = graph.get_void_k_nodes()
 
         if not void_k_nodes:
-            print("[Phase2 Step3] No Shadow Nodes to recall")
+            print(tr(
+                "[Phase2 Step3] No Shadow Nodes to recall",
+                '[阶段2 步骤3] 没有需要回溯的影子节点'
+            ))
             return
 
-        print(f"[Phase2 Step3] Found {len(void_k_nodes)} Shadow Nodes to recall")
+        print(tr(
+            f"[Phase2 Step3] Found {len(void_k_nodes)} Shadow Nodes to recall",
+            f'[阶段2 步骤3] 找到 {len(void_k_nodes)} 个需要回溯的影子节点'
+        ))
 
         try:
 
@@ -629,17 +768,26 @@ class Phase2GraphReasoning:
             )
 
             if result["error"]:
-                print(f"[Phase2 Step3] LLM error: {result['error']}")
+                print(tr(
+                    f"[Phase2 Step3] LLM error: {result['error']}",
+                    f"[阶段2 步骤3] 模型调用错误：{result['error']}"
+                ))
                 return
 
             # Parse and Update Graph
             response_content = result["content"]
-            print(f"[Phase2 Step3] LLM response length: {len(response_content)} chars")
+            print(tr(
+                f"[Phase2 Step3] LLM response length: {len(response_content)} chars",
+                f'[阶段2 步骤3] 模型响应长度：{len(response_content)} 个字符'
+            ))
 
             updates = parse_json_array_from_text(response_content, verbose=True)
 
             if not updates or not isinstance(updates, list):
-                print("[Phase2 Step3] No valid updates from Recall")
+                print(tr(
+                    "[Phase2 Step3] No valid updates from Recall",
+                    '[阶段2 步骤3] 回溯未产生有效更新'
+                ))
                 return
 
             for update in updates:
@@ -665,11 +813,17 @@ class Phase2GraphReasoning:
                             relation = "Match" if new_status == "Present" else "Conflict"
                             graph.add_pk_edge(shadow_p_id, k_node_id, relation=relation)
 
-                            print(f"[Phase2 Step3] Updated Shadow Node: {shadow_p_id} -> {new_status}")
+                            print(tr(
+                                f"[Phase2 Step3] Updated Shadow Node: {shadow_p_id} -> {new_status}",
+                                f'[阶段2 步骤3] 已更新影子节点：{shadow_p_id} -> {new_status}'
+                            ))
 
                         break
 
         except Exception as e:
-            print(f"[Phase2 Step3] Error in recall: {e}")
+            print(tr(
+                f"[Phase2 Step3] Error in recall: {e}",
+                f'[阶段2 步骤3] 回溯时出错：{e}'
+            ))
             import traceback
             traceback.print_exc()

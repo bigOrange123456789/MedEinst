@@ -1,5 +1,7 @@
 """Load raw and refined Illness Graphs by disease ID."""
 
+from src.utils.console import tr
+
 import threading
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -26,8 +28,14 @@ class GoldenGraphLoader:
         refined_count = sum(1 for info in self._available_ids.values() if info[1])
         raw_count = sum(1 for info in self._available_ids.values() if not info[1])
 
-        print(f"[GoldenGraphLoader] Initialized with {len(self._available_ids)} available graphs")
-        print(f"  → Refined: {refined_count}, Raw: {raw_count}")
+        print(tr(
+            f"[GoldenGraphLoader] Initialized with {len(self._available_ids)} available graphs",
+            f'[疾病图加载] 已初始化，可用图数量：{len(self._available_ids)}',
+        ))
+        print(tr(
+            f"  → Refined: {refined_count}, Raw: {raw_count}",
+            f'  → 精化图：{refined_count}，原始图：{raw_count}',
+        ))
 
     def _scan_available_graphs(self) -> Dict[str, Tuple[Path, bool]]:
 
@@ -44,7 +52,10 @@ class GoldenGraphLoader:
 
                         available[disease_id] = (filepath, False)
         else:
-            print(f"[GoldenGraphLoader] Warning: Raw directory not found: {self.golden_graph_dir}")
+            print(tr(
+                f"[GoldenGraphLoader] Warning: Raw directory not found: {self.golden_graph_dir}",
+                f'[疾病图加载] 警告：未找到原始图目录：{self.golden_graph_dir}',
+            ))
 
         if self.refined_graph_dir.exists():
             for filepath in self.refined_graph_dir.glob("*_Refined_GG.json"):
@@ -57,8 +68,14 @@ class GoldenGraphLoader:
 
                         available[disease_id] = (filepath, True)
         else:
-            print(f"[GoldenGraphLoader] Info: Refined directory not found: {self.refined_graph_dir}")
-            print(f"[GoldenGraphLoader] Will load raw Golden Graphs only.")
+            print(tr(
+                f"[GoldenGraphLoader] Info: Refined directory not found: {self.refined_graph_dir}",
+                f'[疾病图加载] 提示：未找到精化图目录：{self.refined_graph_dir}',
+            ))
+            print(tr(
+                f"[GoldenGraphLoader] Will load raw Golden Graphs only.",
+                '[疾病图加载] 将只加载原始疾病图。',
+            ))
 
         return available
 
@@ -86,14 +103,20 @@ class GoldenGraphLoader:
             result[disease_id] = graph
 
         loaded = sum(1 for g in result.values() if g is not None)
-        print(f"[GoldenGraphLoader] Loaded {loaded}/{len(candidate_ids)} Golden Graphs")
+        print(tr(
+            f"[GoldenGraphLoader] Loaded {loaded}/{len(candidate_ids)} Golden Graphs",
+            f'[疾病图加载] 已加载 {loaded}/{len(candidate_ids)} 个疾病图',
+        ))
 
         return result
 
     def _load_single(self, disease_id: str) -> Optional[CanonicalGraph]:
 
         if disease_id not in self._available_ids:
-            print(f"[GoldenGraphLoader] No Golden Graph found for disease {disease_id}")
+            print(tr(
+                f"[GoldenGraphLoader] No Golden Graph found for disease {disease_id}",
+                f'[疾病图加载] 未找到疾病 {disease_id} 的疾病图',
+            ))
             return None
 
         filepath, is_refined = self._available_ids[disease_id]
@@ -102,13 +125,19 @@ class GoldenGraphLoader:
         try:
             graph = CanonicalGraph.load(filepath)
 
-            print(f"[GoldenGraphLoader] ✓ Loaded [{version_tag}] {filepath.name} "
-                  f"(P:{len(graph.p_nodes)}, K:{len(graph.k_nodes)})")
+            print(tr(
+                f"[GoldenGraphLoader] ✓ Loaded [{version_tag}] {filepath.name} "
+                  f"(P:{len(graph.p_nodes)}, K:{len(graph.k_nodes)})",
+                f'[疾病图加载] ✓ 已加载 [{version_tag}] {filepath.name}（患者特征节点：{len(graph.p_nodes)}，知识节点：{len(graph.k_nodes)}）',
+            ))
 
             return graph
 
         except Exception as e:
-            print(f"[GoldenGraphLoader] ✗ Error loading {filepath}: {e}")
+            print(tr(
+                f"[GoldenGraphLoader] ✗ Error loading {filepath}: {e}",
+                f'[疾病图加载] ✗ 加载 {filepath} 失败：{e}',
+            ))
             return None
 
     def get_available_diseases(self) -> List[str]:
@@ -145,7 +174,10 @@ class GoldenGraphLoader:
 
         with self._lock:
             self._cache.clear()
-        print("[GoldenGraphLoader] Cache cleared")
+        print(tr(
+            "[GoldenGraphLoader] Cache cleared",
+            '[疾病图加载] 缓存已清空',
+        ))
 
     def refresh(self) -> None:
 
@@ -157,8 +189,14 @@ class GoldenGraphLoader:
         refined_count = sum(1 for info in self._available_ids.values() if info[1])
         raw_count = sum(1 for info in self._available_ids.values() if not info[1])
 
-        print(f"[GoldenGraphLoader] Refreshed: {len(self._available_ids)} graphs available")
-        print(f"  → Refined: {refined_count}, Raw: {raw_count}")
+        print(tr(
+            f"[GoldenGraphLoader] Refreshed: {len(self._available_ids)} graphs available",
+            f'[疾病图加载] 已刷新，当前有 {len(self._available_ids)} 个可用图',
+        ))
+        print(tr(
+            f"  → Refined: {refined_count}, Raw: {raw_count}",
+            f'  → 精化图：{refined_count}，原始图：{raw_count}',
+        ))
 
     def get_cache_statistics(self) -> Dict[str, int]:
 

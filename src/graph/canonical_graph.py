@@ -1,5 +1,7 @@
 """Disease-specific Illness Graph representation and serialization."""
 
+from src.utils.console import tr
+
 import json
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Set, Tuple
@@ -368,7 +370,10 @@ class CanonicalGraph:
         with open(filepath, "w", encoding="utf-8") as f:
             json.dump(self.to_dict(), f, indent=2, ensure_ascii=False)
 
-        print(f"[CanonicalGraph] Saved {self.pathology_name} to {filepath}")
+        print(tr(
+            f"[CanonicalGraph] Saved {self.pathology_name} to {filepath}",
+            f'[标准疾病图] 已保存 {self.pathology_name} 至 {filepath}',
+        ))
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "CanonicalGraph":

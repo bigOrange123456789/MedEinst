@@ -1,4 +1,6 @@
 """Case-level causal reasoning graph and node schema."""
+
+from src.utils.console import tr
 import networkx as nx
 from typing import Dict, Any, List, Optional, Tuple, Literal
 from src.utils.prompt_utils import DIAGNOSIS_ID_MAP
@@ -447,7 +449,10 @@ class MedicalGraph:
         p_nodes_data = track_b_output.get("p_nodes", [])
 
         if p_nodes_data:
-            print(f"[MedicalGraph] Initializing {len(p_nodes_data)} P-Nodes from Track B")
+            print(tr(
+                f"[MedicalGraph] Initializing {len(p_nodes_data)} P-Nodes from Track B",
+                f'[医学图谱] 正在从路径 B 初始化 {len(p_nodes_data)} 个患者特征节点（P 节点）',
+            ))
             for p_data in p_nodes_data:
                 if not isinstance(p_data, dict):
                     continue
@@ -469,7 +474,10 @@ class MedicalGraph:
                 )
         else:
 
-            print("[MedicalGraph] WARNING: No P-Nodes found in Track B output, trying structured_analysis fallback...")
+            print(tr(
+                "[MedicalGraph] WARNING: No P-Nodes found in Track B output, trying structured_analysis fallback...",
+                '[医学图谱] 警告：路径 B 输出中未找到患者特征节点，正在尝试 structured_analysis 备用数据...',
+            ))
             structured_analysis = phase1_result.get("structured_analysis", {})
 
             if structured_analysis:
@@ -512,7 +520,10 @@ class MedicalGraph:
                             source="Phase1_Fallback"
                         )
 
-        print(f"[MedicalGraph] Initialized with {len(graph.get_d_nodes())} D-Nodes, {len(graph.get_p_nodes())} P-Nodes")
+        print(tr(
+            f"[MedicalGraph] Initialized with {len(graph.get_d_nodes())} D-Nodes, {len(graph.get_p_nodes())} P-Nodes",
+            f'[医学图谱] 已初始化，包含 {len(graph.get_d_nodes())} 个疾病节点（D 节点）、{len(graph.get_p_nodes())} 个患者特征节点（P 节点）',
+        ))
 
         return graph
 

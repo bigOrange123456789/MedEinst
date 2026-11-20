@@ -1,4 +1,5 @@
 """Online evidence audit with Exemplar Base retrieval."""
+from src.utils.console import tr
 
 import json
 from typing import Dict, Any, Optional, List
@@ -30,10 +31,16 @@ class MemoryAugmentedJudge(JudgeAgent):
             self.memory_bank = MemoryBankManager(output_dir=memory_bank_dir)
             try:
                 self.memory_bank.load()
-                print(f"[MemoryAugmentedJudge] Loaded Memory Bank: "
-                      f"{self.memory_bank.get_statistics()}")
+                print(tr(
+                    f"[MemoryAugmentedJudge] Loaded Memory Bank: "
+                          f"{self.memory_bank.get_statistics()}",
+                    f'[记忆增强裁决] 已加载记忆库：{self.memory_bank.get_statistics()}'
+                ))
             except Exception as e:
-                print(f"[MemoryAugmentedJudge] Warning: Failed to load Memory Bank: {e}")
+                print(tr(
+                    f"[MemoryAugmentedJudge] Warning: Failed to load Memory Bank: {e}",
+                    f'[记忆增强裁决] 警告：记忆库加载失败：{e}'
+                ))
 
         self._stats = {
             "total_retrievals": 0,
@@ -96,7 +103,10 @@ class MemoryAugmentedJudge(JudgeAgent):
             )
 
             if result["error"]:
-                print(f"[MemoryAugmentedJudge] LLM error: {result['error']}")
+                print(tr(
+                    f"[MemoryAugmentedJudge] LLM error: {result['error']}",
+                    f"[记忆增强裁决] 模型调用错误：{result['error']}"
+                ))
                 return {
                     **state,
                     "status": "failed",
@@ -107,7 +117,10 @@ class MemoryAugmentedJudge(JudgeAgent):
             parsed_json = parse_json_from_text(response_content, verbose=True)
 
             if not parsed_json:
-                print(f"[MemoryAugmentedJudge] Failed to parse JSON")
+                print(tr(
+                    f"[MemoryAugmentedJudge] Failed to parse JSON",
+                    '[记忆增强裁决] JSON 解析失败'
+                ))
                 return {
                     **state,
                     "status": "failed",
@@ -118,8 +131,11 @@ class MemoryAugmentedJudge(JudgeAgent):
 
             final_output["memory_retrieval_used"] = bool(memory_records)
 
-            print(f"[MemoryAugmentedJudge] Final diagnosis: {final_output.get('final_diagnosis_id')} - "
-                  f"{final_output.get('final_diagnosis_name')} ({final_output.get('status')})")
+            print(tr(
+                f"[MemoryAugmentedJudge] Final diagnosis: {final_output.get('final_diagnosis_id')} - "
+                      f"{final_output.get('final_diagnosis_name')} ({final_output.get('status')})",
+                f"[记忆增强裁决] 最终诊断：{final_output.get('final_diagnosis_id')} - {final_output.get('final_diagnosis_name')}（{final_output.get('status')}）"
+            ))
 
             return {
                 **state,
@@ -131,7 +147,10 @@ class MemoryAugmentedJudge(JudgeAgent):
         except Exception as e:
             import traceback
             error_msg = f"Phase 3 Memory-Augmented error: {str(e)}\n{traceback.format_exc()}"
-            print(f"[MemoryAugmentedJudge] {error_msg}")
+            print(tr(
+                f"[MemoryAugmentedJudge] {error_msg}",
+                f'[记忆增强裁决] 处理错误：{error_msg}'
+            ))
             return {
                 **state,
                 "status": "failed",
@@ -147,13 +166,19 @@ class MemoryAugmentedJudge(JudgeAgent):
 
         try:
             if self.memory_bank is None:
-                print("[MemoryAugmentedJudge] Memory Bank not initialized")
+                print(tr(
+                    "[MemoryAugmentedJudge] Memory Bank not initialized",
+                    '[记忆增强裁决] 记忆库未初始化'
+                ))
                 return []
 
             p_nodes = graph_json.get("graph", {}).get("nodes", {}).get("p_nodes", [])
 
             if not p_nodes:
-                print("[MemoryAugmentedJudge] No P-Nodes in graph for retrieval")
+                print(tr(
+                    "[MemoryAugmentedJudge] No P-Nodes in graph for retrieval",
+                    '[记忆增强裁决] 图谱中没有可用于检索的患者节点（P）'
+                ))
                 return []
 
             # Retrieve both corrected and confirmed cases for the final evidence audit.
@@ -169,7 +194,10 @@ class MemoryAugmentedJudge(JudgeAgent):
             all_cases = overturn_cases + confirm_cases
 
             if not all_cases:
-                print("[MemoryAugmentedJudge] No similar cases found")
+                print(tr(
+                    "[MemoryAugmentedJudge] No similar cases found",
+                    '[记忆增强裁决] 未找到相似病例'
+                ))
                 return []
 
             self._stats["successful_retrievals"] += 1
@@ -181,11 +209,17 @@ class MemoryAugmentedJudge(JudgeAgent):
                 avg_sim = sum(c.get("similarity_score", 0) for c in confirm_cases) / len(confirm_cases)
                 self._stats["avg_similarity_confirm"] = avg_sim
 
-            print(f"[MemoryAugmentedJudge] Retrieved {len(overturn_cases)} Overturn + {len(confirm_cases)} Confirm cases")
+            print(tr(
+                f"[MemoryAugmentedJudge] Retrieved {len(overturn_cases)} Overturn + {len(confirm_cases)} Confirm cases",
+                f'[记忆增强裁决] 检索到 {len(overturn_cases)} 个推翻原诊断的病例 + {len(confirm_cases)} 个确认原诊断的病例'
+            ))
             return all_cases
 
         except Exception as e:
-            print(f"[MemoryAugmentedJudge] Retrieval error: {e}")
+            print(tr(
+                f"[MemoryAugmentedJudge] Retrieval error: {e}",
+                f'[记忆增强裁决] 检索出错：{e}'
+            ))
             return []
 
     def _format_few_shot_from_records(
@@ -246,7 +280,10 @@ class MemoryAugmentedJudge(JudgeAgent):
             all_cases = similar_cases.get("overturn", []) + similar_cases.get("confirm", [])
             return self._format_few_shot_from_records(all_cases)
         except Exception as e:
-            print(f"[MemoryAugmentedJudge] Deprecated retrieval error: {e}")
+            print(tr(
+                f"[MemoryAugmentedJudge] Deprecated retrieval error: {e}",
+                f'[记忆增强裁决] 旧版检索出错：{e}'
+            ))
             return ""
 
     def _format_hidden_label_context(
@@ -388,7 +425,10 @@ Based on the above evidence, determine the **final diagnosis**.
 
             if top_candidates and top_candidates[0] in DIAGNOSIS_ID_MAP:
                 fallback_id = top_candidates[0]
-                print(f"[MemoryAugmentedJudge] Invalid ID '{final_diagnosis_id}', using fallback: {fallback_id}")
+                print(tr(
+                    f"[MemoryAugmentedJudge] Invalid ID '{final_diagnosis_id}', using fallback: {fallback_id}",
+                    f"[记忆增强裁决] ID '{final_diagnosis_id}' 无效，使用后备诊断：{fallback_id}"
+                ))
                 parsed_json["final_diagnosis_id"] = fallback_id
                 parsed_json["final_diagnosis_name"] = DIAGNOSIS_ID_MAP[fallback_id]
                 parsed_json["status"] = "Fallback"

@@ -1,5 +1,7 @@
 """OpenAI-compatible embedding client for matching and retrieval."""
 
+from src.utils.console import tr
+
 import os
 import time
 import numpy as np
@@ -55,7 +57,10 @@ class EmbeddingClient:
                 return np.array(embedding, dtype=np.float32)
 
             except Exception as e:
-                print(f"[EmbeddingClient] Attempt {attempt + 1} failed: {e}")
+                print(tr(
+                    f"[EmbeddingClient] Attempt {attempt + 1} failed: {e}",
+                    f'[嵌入客户端] 第 {attempt + 1} 次尝试失败：{e}',
+                ))
                 if attempt < self.max_retries - 1:
                     time.sleep(self.retry_delay * (attempt + 1))
                 else:

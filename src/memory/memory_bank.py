@@ -1,5 +1,7 @@
 """Store and retrieve compact validated-case exemplars."""
 
+from src.utils.console import tr
+
 import json
 import numpy as np
 from pathlib import Path
@@ -56,7 +58,10 @@ class MemoryBankManager:
         try:
             embedding = self.embedding_client.embed_text(p_nodes_summary)
         except Exception as e:
-            print(f"[MemoryBank] Embedding failed for {case_id}: {e}")
+            print(tr(
+                f"[MemoryBank] Embedding failed for {case_id}: {e}",
+                f'[记忆库] 病例 {case_id} 的嵌入生成失败：{e}',
+            ))
 
             embedding = np.random.randn(1536).astype(np.float32)
 
@@ -88,7 +93,10 @@ class MemoryBankManager:
         self.cases.append(record)
         self.embeddings.append(embedding)
 
-        print(f"[MemoryBank] Added {case_id} ({outcome}). Total: {len(self.cases)}")
+        print(tr(
+            f"[MemoryBank] Added {case_id} ({outcome}). Total: {len(self.cases)}",
+            f'[记忆库] 已添加 {case_id}（{outcome}），当前总数：{len(self.cases)}',
+        ))
 
     def _generate_summary(self, p_nodes: List[Dict[str, Any]]) -> str:
 
@@ -131,7 +139,10 @@ class MemoryBankManager:
         try:
             query_embedding = self.embedding_client.embed_text(query_summary)
         except Exception as e:
-            print(f"[MemoryBank] Query embedding failed: {e}")
+            print(tr(
+                f"[MemoryBank] Query embedding failed: {e}",
+                f'[记忆库] 查询嵌入生成失败：{e}',
+            ))
             return {"overturn": [], "confirm": []}
 
         embeddings_matrix = np.stack(self.embeddings)
@@ -198,7 +209,10 @@ class MemoryBankManager:
             npy_path = self.output_dir / "embeddings.npy"
             np.save(npy_path, embeddings_matrix)
 
-        print(f"[MemoryBank] Saved {len(self.cases)} cases to {self.output_dir}")
+        print(tr(
+            f"[MemoryBank] Saved {len(self.cases)} cases to {self.output_dir}",
+            f'[记忆库] 已保存 {len(self.cases)} 个病例至 {self.output_dir}',
+        ))
 
     def load(self) -> None:
 
@@ -219,12 +233,18 @@ class MemoryBankManager:
                 else:
                     self._confirm_indices.append(idx)
 
-            print(f"[MemoryBank] Loaded {len(self.cases)} cases from {json_path}")
+            print(tr(
+                f"[MemoryBank] Loaded {len(self.cases)} cases from {json_path}",
+                f'[记忆库] 已从 {json_path} 加载 {len(self.cases)} 个病例',
+            ))
 
         if npy_path.exists():
             embeddings_matrix = np.load(npy_path)
             self.embeddings = [embeddings_matrix[i] for i in range(len(embeddings_matrix))]
-            print(f"[MemoryBank] Loaded {len(self.embeddings)} embeddings from {npy_path}")
+            print(tr(
+                f"[MemoryBank] Loaded {len(self.embeddings)} embeddings from {npy_path}",
+                f'[记忆库] 已从 {npy_path} 加载 {len(self.embeddings)} 个嵌入向量',
+            ))
 
     def get_statistics(self) -> Dict[str, Any]:
 
