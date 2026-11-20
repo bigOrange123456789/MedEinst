@@ -358,7 +358,8 @@ class OnlineInferenceRunner:
         self,
         case_dirs: List[CasePair],
         case_types: List[str],
-        retry_failed: bool = False
+        retry_failed: bool = False,
+        rerun: bool = False
     ) -> List[OnlineResult]:
 
         tasks = []
@@ -374,6 +375,11 @@ class OnlineInferenceRunner:
                         tasks.append((case_dir, case_type))
                         break
             print(tr(f"[OnlineRunner] Retrying {len(tasks)} failed cases", f"[在线推理] 重试 {len(tasks)} 个失败病例"))
+        elif rerun:
+
+            tasks = [(case_dir, case_type) for case_dir in case_dirs for case_type in case_types]
+            print(tr(f"[OnlineRunner] Rerunning {len(tasks)} cases (ignoring previous results)",
+                     f"[在线推理] 重跑 {len(tasks)} 个病例（忽略已有结果）"))
         else:
 
             processed = self.output_manager.load_processed_cases()
@@ -577,6 +583,9 @@ Examples:
   # Retry failed cases
   python scripts/run_ecr_agent.py --benchmark-set test.jsonl --retry-failed
 
+  # Rerun all selected cases, ignoring previous results
+  python scripts/run_ecr_agent.py --benchmark-set test.jsonl --limit 2 --rerun
+
   # Detailed per-case and per-phase timing
   python scripts/run_ecr_agent.py --benchmark-set test.jsonl --limit 10 --detailed-timing
         """, """
@@ -592,6 +601,9 @@ Examples:
 
   # 重试失败的病例
   python scripts/run_ecr_agent.py --benchmark-set test.jsonl --retry-failed --console-language zh
+
+  # 重跑所有已选病例（忽略已有结果）
+  python scripts/run_ecr_agent.py --benchmark-set test.jsonl --limit 2 --rerun --console-language zh
 
   # 输出每个病例及各阶段的详细耗时
   python scripts/run_ecr_agent.py --benchmark-set test.jsonl --limit 10 --detailed-timing --console-language zh
@@ -687,10 +699,17 @@ Examples:
         help=tr("Number of concurrent workers (default: 4)", "并行工作线程数（默认：4）")
     )
 
-    parser.add_argument(
+    rerun_group = parser.add_mutually_exclusive_group()
+    rerun_group.add_argument(
         "--retry-failed",
         action="store_true",
         help=tr("Retry only previously failed cases", "仅重试之前失败的病例")
+    )
+    rerun_group.add_argument(
+        "--rerun",
+        action="store_true",
+        help=tr("Rerun all selected cases even if results already exist in the output directory",
+                "重跑所有已选病例，即使输出目录中已有结果（忽略历史结果）")
     )
 
     parser.add_argument(
@@ -803,7 +822,8 @@ def main():
     results = runner.run(
         case_dirs=case_dirs,
         case_types=case_types,
-        retry_failed=args.retry_failed
+        retry_failed=args.retry_failed,
+        rerun=args.rerun
     )
     total_time = time.time() - start_time  # wall-clock seconds
 
