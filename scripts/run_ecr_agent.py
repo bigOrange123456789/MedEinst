@@ -7,7 +7,7 @@ import sys
 import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
@@ -44,6 +44,7 @@ class OnlineResult:
     verdict_status: Optional[str] = None  # "Confirm" | "Overturn" | "Fallback"
     is_correct: bool = False
     processing_time: float = 0.0
+    phase_times: Dict[str, float] = field(default_factory=dict)
     error_message: Optional[str] = None
     hybrid_stats: Optional[Dict[str, int]] = None
     memory_used: bool = False
@@ -137,7 +138,8 @@ class OnlineInferenceRunner:
         memory_bank_dir: str = "memory_bank",
         parallel: bool = False,
         max_workers: int = 4,
-        config_path: Optional[str] = None
+        config_path: Optional[str] = None,
+        verbose_timing: bool = False
     ):
         # Import runtime modules after CLI language selection, including any
         # optional-dependency warnings emitted during import.
@@ -152,6 +154,7 @@ class OnlineInferenceRunner:
         self.output_manager = output_manager
         self.parallel = parallel
         self.max_workers = max_workers
+        self.verbose_timing = verbose_timing
 
         api_config = config.get("api", {})
         self.llm_client = LLMClient(
@@ -216,6 +219,9 @@ class OnlineInferenceRunner:
 
         case_id = case_dir.name
         start_time = time.time()
+        # Per-phase processing times, measured on the calling thread so the
+        # breakdown is correct even when cases run concurrently.
+        phase_times: Dict[str, float] = {}
 
         try:
             case_info = case_dir.get(case_type)
@@ -224,7 +230,9 @@ class OnlineInferenceRunner:
             gt_id = case_info.ground_truth_id
 
             # Phase 1
+            phase_start = time.time()
             phase1_result = self.phase1.process(narrative)
+            phase_times["phase1"] = time.time() - phase_start
 
             if phase1_result.get("error"):
                 raise Exception(f"Phase 1 error: {phase1_result['error']}")
@@ -250,9 +258,11 @@ class OnlineInferenceRunner:
             }
 
             # Phase 2 (Hybrid Engine)
+            phase_start = time.time()
             state = self.phase2.process(state)
 
             if state.get("status") == "failed":
+                phase_times["phase2"] = time.time() - phase_start
                 raise Exception(f"Phase 2 error: {state.get('error_log')}")
 
             graph_json = state.get("graph_json", {})
@@ -262,9 +272,12 @@ class OnlineInferenceRunner:
 
             naive_scores = calculate_naive_scores(graph_json)
             state["naive_scores"] = naive_scores
+            phase_times["phase2"] = time.time() - phase_start
 
             # Phase 3 (Memory-Augmented Judge)
+            phase_start = time.time()
             state = self.phase3.process(state)
+            phase_times["phase3"] = time.time() - phase_start
 
             if state.get("status") == "failed":
                 raise Exception(f"Phase 3 error: {state.get('error_log')}")
@@ -282,6 +295,7 @@ class OnlineInferenceRunner:
             self.output_manager.save_graph(f"{case_id}_{case_type}", graph_json)
 
             processing_time = time.time() - start_time
+            phase_times["other"] = max(0.0, processing_time - sum(phase_times.values()))
 
             hybrid_stats = graph_json.get("hybrid_engine_stats", {})
             memory_used = final_output.get("memory_retrieval_used", False)
@@ -299,6 +313,7 @@ class OnlineInferenceRunner:
                 verdict_status=verdict_status,
                 is_correct=is_correct,
                 processing_time=processing_time,
+                phase_times=phase_times,
                 error_message=None,
                 hybrid_stats=hybrid_stats,
                 memory_used=memory_used
@@ -306,6 +321,7 @@ class OnlineInferenceRunner:
 
         except Exception as e:
             processing_time = time.time() - start_time
+            phase_times["other"] = max(0.0, processing_time - sum(phase_times.values()))
             error_msg = f"{str(e)}\n{traceback.format_exc()}"
 
             self.output_manager.save_error(case_id, case_type, error_msg)
@@ -315,8 +331,28 @@ class OnlineInferenceRunner:
                 case_type=case_type,
                 status="error",
                 processing_time=processing_time,
+                phase_times=phase_times,
                 error_message=str(e)
             )
+
+    def _report_case_timing(self, result: OnlineResult) -> None:
+        """Print one case's total and per-phase times when detailed timing is on.
+
+        Called from the main thread only (sequentially, or once per completed
+        future in parallel mode), so output lines never interleave even when
+        cases are processed by multiple workers.
+        """
+        if not self.verbose_timing or result.processing_time <= 0:
+            return
+        parts = [
+            f"{key}={result.phase_times[key]:.2f}s"
+            for key in ("phase1", "phase2", "phase3", "other")
+            if key in result.phase_times
+        ]
+        tqdm.write(tr(
+            f"⏱️  {result.case_id} ({result.case_type}): total={result.processing_time:.2f}s | {' '.join(parts)}",
+            f"⏱️  {result.case_id}（{result.case_type}）：总耗时={result.processing_time:.2f} 秒 | {' '.join(parts)}"
+        ))
 
     def run(
         self,
@@ -371,6 +407,7 @@ class OnlineInferenceRunner:
                 results.append(result)
 
                 self.output_manager.save_result(result)
+                self._report_case_timing(result)
 
                 status_icon = "✓" if result.status == "success" else "✗"
                 correct_icon = "🎯" if result.is_correct else ""
@@ -404,6 +441,7 @@ class OnlineInferenceRunner:
 
                     results.append(result)
                     self.output_manager.save_result(result)
+                    self._report_case_timing(result)
 
                     status_icon = "✓" if result.status == "success" else "✗"
                     pbar.set_postfix_str(f"{status_icon} {result.case_id}")
@@ -416,6 +454,102 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
     config_path = Path(config_path or PROJECT_ROOT / "config" / "settings.yaml").expanduser().resolve()
     with open(config_path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
+
+PHASE_KEYS = ("phase1", "phase2", "phase3", "other")
+
+def build_timing_report(results: List[OnlineResult], wall_time: float) -> Dict[str, Any]:
+    """Aggregate per-case and per-phase processing times (all values in seconds)."""
+    case_entries = []
+    phase_samples: Dict[str, List[float]] = {key: [] for key in PHASE_KEYS}
+    total_samples: List[float] = []
+
+    for r in sorted(results, key=lambda x: (x.case_id, x.case_type)):
+        entry = {
+            "case_id": r.case_id,
+            "case_type": r.case_type,
+            "status": r.status,
+            "total_seconds": round(r.processing_time, 4),
+            "phase_times": {
+                key: round(r.phase_times[key], 4)
+                for key in PHASE_KEYS if key in r.phase_times
+            },
+        }
+        case_entries.append(entry)
+        if r.processing_time > 0:
+            total_samples.append(r.processing_time)
+        for key in PHASE_KEYS:
+            if key in r.phase_times:
+                phase_samples[key].append(r.phase_times[key])
+
+    def stats(samples: List[float]) -> Dict[str, Any]:
+        if not samples:
+            return {"count": 0, "avg_seconds": 0.0, "min_seconds": 0.0, "max_seconds": 0.0}
+        return {
+            "count": len(samples),
+            "avg_seconds": round(sum(samples) / len(samples), 4),
+            "min_seconds": round(min(samples), 4),
+            "max_seconds": round(max(samples), 4),
+        }
+
+    return {
+        "wall_time_seconds": round(wall_time, 4),
+        "sum_case_time_seconds": round(sum(total_samples), 4),
+        "total_per_case": stats(total_samples),
+        "phases": {key: stats(phase_samples[key]) for key in PHASE_KEYS},
+        "cases": case_entries,
+    }
+
+def print_timing_report(report: Dict[str, Any], parallel: bool) -> None:
+    """Print per-case and per-phase timing details (all values in seconds)."""
+    total_stats = report["total_per_case"]
+    phases = report["phases"]
+
+    print(tr("\nDetailed timing report:", "\n详细耗时报告："))
+    print(tr(
+        f"  Wall-clock total time: {report['wall_time_seconds']:.2f}s",
+        f"  总耗时（墙钟时间）：{report['wall_time_seconds']:.2f} 秒"
+    ))
+    print(tr(
+        f"  Sum of per-case times: {report['sum_case_time_seconds']:.2f}s",
+        f"  各病例耗时之和：{report['sum_case_time_seconds']:.2f} 秒"
+    ))
+    if parallel:
+        print(tr(
+            "  (Parallel mode: the wall-clock total is smaller than the sum of per-case times)",
+            "  （并行模式：墙钟总耗时小于各病例耗时之和，因为病例是并发处理的）"
+        ))
+    print(tr("  Per-case time (seconds):", "  每个病例的处理时间（秒）："))
+    print(tr(
+        f"    {'case_id':<20} {'type':<13} {'total':>9} {'phase1':>9} {'phase2':>9} {'phase3':>9} {'other':>9}",
+        f"    {'病例ID':<18} {'类型':<11} {'总耗时':>9} {'阶段1':>9} {'阶段2':>9} {'阶段3':>9} {'其他':>9}"
+    ))
+    for entry in report["cases"]:
+        pt = entry["phase_times"]
+
+        def fmt(key: str) -> str:
+            return f"{pt[key]:.2f}" if key in pt else "-"
+
+        print(
+            f"    {entry['case_id']:<20} {entry['case_type']:<13} "
+            f"{entry['total_seconds']:>8.2f} {fmt('phase1'):>9} {fmt('phase2'):>9} "
+            f"{fmt('phase3'):>9} {fmt('other'):>9}"
+        )
+    print(tr(
+        f"  Per-case total (avg / min / max): "
+        f"{total_stats['avg_seconds']:.2f}s / {total_stats['min_seconds']:.2f}s / {total_stats['max_seconds']:.2f}s",
+        f"  单个病例总耗时（平均 / 最小 / 最大）："
+        f"{total_stats['avg_seconds']:.2f} 秒 / {total_stats['min_seconds']:.2f} 秒 / {total_stats['max_seconds']:.2f} 秒"
+    ))
+    print(tr("  Per-phase time (avg / min / max, seconds):",
+             "  各阶段耗时（平均 / 最小 / 最大，秒）："))
+    for key in PHASE_KEYS:
+        s = phases[key]
+        if not s["count"]:
+            continue
+        print(tr(
+            f"    {key:<8} {s['avg_seconds']:>8.2f} / {s['min_seconds']:>8.2f} / {s['max_seconds']:>8.2f}  (n={s['count']})",
+            f"    {key:<8} {s['avg_seconds']:>8.2f} / {s['min_seconds']:>8.2f} / {s['max_seconds']:>8.2f}  （样本数={s['count']}）"
+        ))
 
 def parse_args(argv=None):
     # Read language first so --console-language zh --help is also in Chinese.
@@ -442,6 +576,9 @@ Examples:
   
   # Retry failed cases
   python scripts/run_ecr_agent.py --benchmark-set test.jsonl --retry-failed
+
+  # Detailed per-case and per-phase timing
+  python scripts/run_ecr_agent.py --benchmark-set test.jsonl --limit 10 --detailed-timing
         """, """
 示例:
   # 使用中文控制台输出，处理一组病例
@@ -455,6 +592,9 @@ Examples:
 
   # 重试失败的病例
   python scripts/run_ecr_agent.py --benchmark-set test.jsonl --retry-failed --console-language zh
+
+  # 输出每个病例及各阶段的详细耗时
+  python scripts/run_ecr_agent.py --benchmark-set test.jsonl --limit 10 --detailed-timing --console-language zh
         """)
     )
 
@@ -554,6 +694,13 @@ Examples:
     )
 
     parser.add_argument(
+        "--detailed-timing",
+        action="store_true",
+        help=tr("Print detailed timing: per-case processing time and per-phase (Phase 1/2/3) time",
+                "输出详细耗时信息：每个病例的处理时间，以及各阶段（阶段1/2/3）的处理时间")
+    )
+
+    parser.add_argument(
         "--model",
         type=str,
         default=None,
@@ -631,6 +778,8 @@ def main():
     print(tr(f"⚡ Parallel mode: {'Yes' if args.parallel else 'No'}", f"⚡ 并行模式：{'是' if args.parallel else '否'}"))
     if args.parallel:
         print(tr(f"👷 Workers: {args.workers}", f"👷 工作线程数：{args.workers}"))
+    if args.detailed_timing:
+        print(tr("⏱️ Detailed timing: Enabled", "⏱️ 详细耗时输出：已启用"))
     print("=" * 70)
 
     try:
@@ -642,7 +791,8 @@ def main():
             memory_bank_dir=memory_bank_dir,
             parallel=args.parallel,
             max_workers=args.workers,
-            config_path=str(config_path)
+            config_path=str(config_path),
+            verbose_timing=args.detailed_timing
         )
     except Exception as e:
         print(tr(f"❌ Failed to initialize runner: {e}", f"❌ 推理程序初始化失败：{e}"))
@@ -655,7 +805,7 @@ def main():
         case_types=case_types,
         retry_failed=args.retry_failed
     )
-    total_time = time.time() - start_time
+    total_time = time.time() - start_time  # wall-clock seconds
 
     success_count = sum(1 for r in results if r.status == "success")
     error_count = sum(1 for r in results if r.status == "error")
@@ -691,6 +841,8 @@ def main():
             "workers": args.workers if args.parallel else 1
         }
     }
+    if args.detailed_timing:
+        summary["timing_details"] = build_timing_report(results, total_time)
     output_manager.save_summary(summary)
 
     print("\n" + "=" * 70)
@@ -708,6 +860,8 @@ def main():
                  f"  - 陷阱病例：{trap_correct}/{len(trap_results)}（{summary['trap_accuracy']:.2%}）"))
     print(tr(f"🔄 Overturn: {overturn_count}", f"🔄 推翻初始诊断：{overturn_count}"))
     print(tr(f"⏱️  Total time: {total_time:.1f}s", f"⏱️  总耗时：{total_time:.1f} 秒"))
+    if args.detailed_timing and results:
+        print_timing_report(summary["timing_details"], parallel=args.parallel)
     print(tr(f"📊 Results saved to: {output_manager.output_dir}", f"📊 结果已保存至：{output_manager.output_dir}"))
     print("=" * 70)
 

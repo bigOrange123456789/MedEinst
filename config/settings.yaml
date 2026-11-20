@@ -2,15 +2,21 @@
 
 # Base diagnostic model. Qwen3-32B requires a user-supplied compatible endpoint.
 api:
-  base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
-  base_url_env: ECR_BASE_URL
-  api_key_env: ECR_BASE_API_KEY
-  # model_name: "qwen3-32b"
-  # model_name: "Qwen/Qwen3-32B" #"https://api.siliconflow.cn/v1"
-  model_name: "qwen3.8-27b"
-  timeout: 120
-  max_retries: 3
-  retry_delay: 2
+  # base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+  # base_url_env: ECR_BASE_URL
+  # api_key_env: ECR_BASE_API_KEY
+  # # model_name: "qwen3-32b"
+  # # model_name: "Qwen/Qwen3-32B" #"https://api.siliconflow.cn/v1"
+  # model_name: "qwen3.8-27b"
+  # timeout: 120
+  # max_retries: 3
+  # retry_delay: 2
+  base_url: "https://www.runtoken.ai/v1"   # base_url: null  # Official OpenAI API; an optional compatible URL may be set here
+  base_url_env: ECR_CRITIC_URL
+  api_key_env: OPENAI_API_KEY
+  model_name: "gpt-6.1-sol" #"gpt-4o"  # Configurable by the user
+  timeout: 180
+  max_retries: 2
 
 # Critic for CGME feedback and optional Illness Graph refinement.
 critical_model:
@@ -47,7 +53,7 @@ online_inference:
   golden_graph_dir: "../golden_graphs"
   refined_graph_dir: "../golden_graphs_refined"
   memory_bank_dir: "../memory_bank"
-  output_dir: "../output_online"
+  output_dir: "../output_smoke"
 
 phase1:
   confidence_threshold: 0.90  # 90% confidence threshold for fast path

@@ -209,6 +209,7 @@ golden_graphs_refined/
 golden_graphs_refined_1/
 memory_bank/
 output_online/
+output_smoke/
 logs/
 embeddings.npy
 memory_bank.json
