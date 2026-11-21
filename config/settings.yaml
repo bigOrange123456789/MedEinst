@@ -1,7 +1,20 @@
 # ECR-Agent model, reasoning, and output settings.
 
-# Base diagnostic model. Qwen3-32B requires a user-supplied compatible endpoint.
+# Base diagnostic model: local weights or an OpenAI-compatible endpoint.
 api:
+  localhost: true  # localhost=true 直接加载本地 Transformers 权重，忽略 URL/API Key; HTTP 服务（Ollama/vLLM/LM Studio）则保持 false，配置 base_url。
+  model_path: "G:/Codex/MLMtest/Qwen3-VL-2B-Instruct"              # 例：'G:/models/Qwen3-8B'；相对路径以本文件目录为准
+  lora_adapter: null            # 可选：'G:/models/my-lora'
+  # 设备自动检测：优先使用可用 GPU，否则使用 CPU；加载时打印运行模式。
+  torch_dtype: auto             # auto / float32 / float16 / bfloat16
+  trust_remote_code: true
+  # max_new_tokens: 4096        # 设置后覆盖各阶段的生成长度；未设置则沿用各阶段默认值
+  # temperature: 0.0
+  # top_p: 0.95
+  # repetition_penalty: 1.0
+  # chat_template_kwargs: {enable_thinking: false}  # 支持该选项的本地模型
+  # extra_body: {chat_template_kwargs: {enable_thinking: false}}  # HTTP 服务参数
+  # supports_logprobs: false    # 不支持 token 概率的 HTTP 服务可显式关闭
   # base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
   # base_url_env: ECR_BASE_URL
   # api_key_env: ECR_BASE_API_KEY
@@ -15,11 +28,19 @@ api:
   base_url_env: ECR_CRITIC_URL
   api_key_env: OPENAI_API_KEY
   model_name: "gpt-6.1-sol" #"gpt-4o"  # Configurable by the user
-  timeout: 180
+  timeout: 180                  # HTTP 请求超时；本地 generate 不使用此超时
   max_retries: 2
 
 # Critic for CGME feedback and optional Illness Graph refinement.
 critical_model:
+  # 离线 CGME / 图精化使用此段；可与 api 使用同一个权重目录（自动复用）。
+  localhost: false
+  model_path: null
+  lora_adapter: null
+  torch_dtype: auto
+  trust_remote_code: true
+  # max_new_tokens: 4096
+  # chat_template_kwargs: {enable_thinking: false}
   base_url: "https://www.runtoken.ai/v1"   # base_url: null  # Official OpenAI API; an optional compatible URL may be set here
   base_url_env: ECR_CRITIC_URL
   api_key_env: OPENAI_API_KEY
@@ -29,6 +50,9 @@ critical_model:
 
 # Shared embedding model for exemplar retrieval and Online P-node matching.
 embedding:
+  # 无嵌入服务时设 false：使用文本匹配，并禁用范例向量检索。
+  # 也可保留 true，配置本地 /v1/embeddings 服务（必须是嵌入模型）。
+  enabled: true
   base_url: "https://api.openai.com/v1" #null  # Official OpenAI API unless overridden
   base_url_env: ECR_EMBEDDING_URL
   api_key_env: ECR_EMBEDDING_API_KEY

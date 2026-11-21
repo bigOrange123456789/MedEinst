@@ -55,7 +55,63 @@ MedEinst 的基准测试集包含 **5,383 对反事实临床病例，涵盖 49 �
 python -m pip install -r requirements.txt
 ```
 
-在 `config/settings.yaml` 中配置你的基座 LLM、批评者模型、嵌入模型以及 API 端点。默认的 `qwen3-32b` 基座模型需要一个兼容的模型端点。凭证信息应通过环境变量提供；详见 [configuration.md](docs/configuration.md)。
+在 `config/settings.yaml` 中分别配置基座 LLM（`api`）、批评者（`critical_model`）和嵌入服务（`embedding`）。LLM 支持直接加载本地权重，以及远程或本地 OpenAI 兼容 HTTP 服务。远程凭证推荐通过 `api_key_env` 指定的环境变量提供，也支持 `api_key`。
+
+### 本地权重推理（与 lab2.py 的 localhost 模式一致）
+
+在运行本项目的 Python 环境中安装可选依赖（例如先 `conda activate MedEinst`）：
+
+```bash
+python -m pip install -r requirements-local.txt
+```
+
+将 `settings.yaml` 的 `api` 段中的对应字段改为：
+
+```yaml
+api:
+  localhost: true
+  model_name: my-local-model       # 本地模式仅用于日志，实际加载 model_path
+  model_path: 'G:/models/Qwen3-8B'  # 改成真实的完整模型目录
+  lora_adapter: null               # 有 LoRA 时填写适配器目录
+  torch_dtype: auto
+  trust_remote_code: true
+  max_new_tokens: 4096
+  temperature: 0.0
+  top_p: 0.95
+  repetition_penalty: 1.0
+  chat_template_kwargs:
+    enable_thinking: false        # 仅对支持此模板参数的模型生效
+
+embedding:
+  enabled: false                  # 没有嵌入服务时关闭
+```
+
+这是字段修改示例，其余已有配置可以保留。`localhost: true` 时无需 API Key，`base_url` 和对应环境变量不会用于模型调用。`model_path` 必须是包含模型配置、tokenizer 和权重的 Transformers 目录；GGUF 文件请通过本地兼容 HTTP 服务使用。路径相对 `settings.yaml` 所在目录解析，Windows 路径建议使用 `/` 或 YAML 单引号。
+
+设备由程序自动检测，无需在 YAML 中配置：优先使用当前 PyTorch 环境可用的 CUDA 显卡（`cuda:0`），其次使用 Apple MPS；没有可用显卡时使用 CPU。首次加载模型时会打印所选设备，加载完成后打印当前 GPU/CPU 运行模式，CUDA 模式还会显示显卡名称。判断依据是 PyTorch 能否使用显卡，因此 CPU 版 PyTorch 或不可用的驱动会选择 CPU。
+
+运行离线 CGME 或图精化时，将 `critical_model` 段同样设置为 `localhost: true` 并填写模型目录；它与 `api` 相互独立。相同加载配置会复用一份权重，本地并发请求会排队生成。模型首次调用时才加载；加载失败会明确返回错误。普通 CausalLM 和 Qwen3-VL 等视觉语言模型均走文本推理，本项目没有增加图片输入流程。Qwen3-VL 需要支持该架构的 Transformers 版本（至少 4.57）。
+
+`max_new_tokens`、`temperature` 设置后会覆盖各推理阶段传入的对应值，不设置则沿用阶段默认值；`chat_template_kwargs` 传给本地聊天模板。模板处理遵循 [Transformers 官方聊天模板说明](https://huggingface.co/docs/transformers/main/en/chat_templating)，LoRA 通过 [PEFT 的加载接口](https://huggingface.co/docs/peft/en/package_reference/peft_model)加载。
+
+### 本地 OpenAI 兼容服务
+
+已通过 Ollama、vLLM 或 LM Studio 启动服务时，无需本地权重依赖，设置例如：
+
+```yaml
+api:
+  localhost: false
+  base_url: http://127.0.0.1:8000/v1
+  base_url_env: null              # 避免已有环境变量覆盖本地 URL
+  api_key_env: null
+  api_key: local                 # 无认证时任意非空值；需要认证时填真实密钥
+  model_name: your-served-model  # 服务实际暴露的模型名
+  supports_logprobs: false
+```
+
+loopback 地址（localhost / 127.0.0.1 / ::1）未提供密钥时自动使用占位值；其他地址仍要求配置密钥。服务专用参数通过 `extra_body` 透传。
+
+嵌入服务独立于 LLM：`embedding.enabled: false` 会停用向量检索并使用已有文本匹配能力，因此不等同于完整的原始评测配置，也不会访问默认远程嵌入 API。若需要保留向量检索，可将 `embedding.base_url`、`model_name`、`dimension` 配成自己的兼容嵌入服务。更换嵌入模型后应使用新模型重建范例库向量，即使维度相同也不能混用。诊断流程中的外部知识搜索仍可能访问网络；本地模型模式不代表整个系统离线运行。
 
 ## 🚀 快速开始：在线 ECR-Agent
 

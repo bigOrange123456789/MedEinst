@@ -2,6 +2,33 @@
 
 import os
 from pathlib import Path
+from urllib.parse import urlparse
+import ipaddress
+
+
+def config_bool(value, default: bool = False) -> bool:
+    """Parse YAML booleans and lab2-style string flags without bool('false')."""
+    if value is None:
+        return default
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in ("1", "true", "yes", "y", "on"):
+            return True
+        if normalized in ("0", "false", "no", "n", "off"):
+            return False
+        raise ValueError(f"Invalid boolean setting: {value!r}")
+    return bool(value)
+
+
+def is_loopback_url(url: str) -> bool:
+    """Only allow automatic dummy API keys for local HTTP services."""
+    host = urlparse(url).hostname
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
 
 
 def configured_base_url(section: dict):

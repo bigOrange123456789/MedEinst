@@ -26,7 +26,7 @@ from src.utils.console import (
 from src.utils.prompt_utils import DIAGNOSIS_ID_MAP
 from src.graph.state import AgentState
 from src.data.medeinst_adapter import CasePair, load_pairs
-from src.utils.runtime_config import configured_base_url, config_relative_path
+from src.utils.runtime_config import config_relative_path
 
 
 @dataclass
@@ -156,19 +156,15 @@ class OnlineInferenceRunner:
         self.max_workers = max_workers
         self.verbose_timing = verbose_timing
 
+        config_path = Path(config_path or PROJECT_ROOT / "config" / "settings.yaml").expanduser().resolve()
         api_config = config.get("api", {})
-        self.llm_client = LLMClient(
-            base_url=configured_base_url(api_config),
-            api_key_env=api_config.get("api_key_env", "OPENAI_API_KEY"),
-            timeout=api_config.get("timeout", 120)
+        self.llm_client = LLMClient.from_config(
+            api_config, config_path=config_path, default_timeout=120
         )
         self.model_name = api_config.get("model_name", "qwen3-32b")
         embedding_config = config.get("embedding", {})
-        embedding_client = EmbeddingClient(
-            base_url=configured_base_url(embedding_config),
-            api_key_env=embedding_config.get("api_key_env", "OPENAI_API_KEY"),
-            model=embedding_config.get("model_name", "text-embedding-3-small"),
-            dimension=embedding_config.get("dimension", 1536)
+        embedding_client = EmbeddingClient.from_config(
+            embedding_config, config_path=config_path
         )
 
         self.phase1 = Phase1Manager(self.llm_client, self.model_name)

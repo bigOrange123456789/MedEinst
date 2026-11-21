@@ -223,4 +223,8 @@ marimo/_lsp/
 __marimo__/
 
 # Tests
-tests/
+tests/*
+!tests/test_local_llm.py
+!tests/test_embedding_config.py
+!tests/test_launchers_local.py
+!tests/test_console_language.py

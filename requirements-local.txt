@@ -1,0 +1,7 @@
+# Optional local weights backend; install into the environment running MedEinst.
+-r requirements.txt
+torch>=2.2
+transformers>=4.57,<6
+accelerate>=0.26
+# Only used when lora_adapter is configured.
+peft>=0.13

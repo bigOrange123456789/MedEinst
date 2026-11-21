@@ -56,14 +56,23 @@ class MemoryBankManager:
         p_nodes_summary = self._generate_summary(p_nodes)
 
         try:
-            embedding = self.embedding_client.embed_text(p_nodes_summary)
+            client = self.embedding_client
+            if not getattr(client, "enabled", True):
+                dimension = len(self.embeddings[0]) if self.embeddings else client.dimension
+                embedding = np.zeros(dimension, dtype=np.float32)
+            else:
+                embedding = client.embed_text(p_nodes_summary)
+                if self.embeddings and len(embedding) != len(self.embeddings[0]):
+                    raise ValueError("Embedding dimensions changed; rebuild the memory bank with the configured model.")
         except Exception as e:
             print(tr(
                 f"[MemoryBank] Embedding failed for {case_id}: {e}",
                 f'[记忆库] 病例 {case_id} 的嵌入生成失败：{e}',
             ))
 
-            embedding = np.random.randn(1536).astype(np.float32)
+            dimension = (len(self.embeddings[0]) if self.embeddings
+                         else getattr(self._embedding_client, "dimension", 1536))
+            embedding = np.zeros(dimension, dtype=np.float32)
 
         outcome = "Confirm" if initial_diagnosis_id == final_diagnosis_id else "Overturn"
 
@@ -132,7 +141,7 @@ class MemoryBankManager:
         n_confirm: int = 2
     ) -> Dict[str, List[Dict[str, Any]]]:
 
-        if not self.cases:
+        if not self.cases or not getattr(self._embedding_client, "enabled", True):
             return {"overturn": [], "confirm": []}
 
         query_summary = self._generate_summary(query_p_nodes)
@@ -145,8 +154,20 @@ class MemoryBankManager:
             ))
             return {"overturn": [], "confirm": []}
 
+        if not self.embeddings:
+            return {"overturn": [], "confirm": []}
         embeddings_matrix = np.stack(self.embeddings)
+        if embeddings_matrix.shape[1] != len(query_embedding):
+            print(tr(
+                "[MemoryBank] Embedding dimensions changed; rebuild the memory bank with the configured model.",
+                '[记忆库] 嵌入向量维度已变化，请使用当前配置的嵌入模型重建范例库。',
+            ))
+            return {"overturn": [], "confirm": []}
+        if not np.linalg.norm(query_embedding):
+            return {"overturn": [], "confirm": []}
         similarities = self._cosine_similarity(query_embedding, embeddings_matrix)
+        # Disabled or failed embedding calls leave zero placeholders, never exemplars.
+        similarities[np.linalg.norm(embeddings_matrix, axis=1) == 0] = -np.inf
 
         overturn_cases = self._retrieve_by_outcome(
             similarities, self._overturn_indices, n_overturn
@@ -170,7 +191,8 @@ class MemoryBankManager:
         if not indices or n <= 0:
             return []
 
-        outcome_similarities = [(idx, similarities[idx]) for idx in indices]
+        outcome_similarities = [(idx, similarities[idx]) for idx in indices
+                                if idx < len(similarities) and np.isfinite(similarities[idx])]
 
         outcome_similarities.sort(key=lambda x: x[1], reverse=True)
 

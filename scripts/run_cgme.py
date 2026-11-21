@@ -17,7 +17,7 @@ from src.training.offline_trainer import OfflineTrainer, ConcurrentOfflineTraine
 from src.utils.api_client import LLMClient
 from src.memory.embedding_client import EmbeddingClient
 from src.data.medeinst_adapter import load_pairs, resolve_support_manifest
-from src.utils.runtime_config import configured_base_url, config_relative_path
+from src.utils.runtime_config import config_relative_path
 
 
 def load_config(config_path: str = None) -> dict:
@@ -102,7 +102,8 @@ def main():
 
     # Load Config
     print("\n[Setup] Loading configuration...")
-    config = load_config(args.config)
+    config_path = Path(args.config or project_root / "config" / "settings.yaml").expanduser().resolve()
+    config = load_config(config_path)
 
     api_config = config.get("api", {})
     critical_config = config.get("critical_model", {})
@@ -141,30 +142,25 @@ def main():
 
     print("\n[Setup] Initializing LLM clients...")
 
-    main_client = LLMClient(
-        base_url=configured_base_url(api_config),
-        api_key_env=api_config.get("api_key_env", "OPENAI_API_KEY"),
-        timeout=api_config.get("timeout", 120)
+    main_client = LLMClient.from_config(
+        api_config, config_path=config_path, default_timeout=120
     )
 
-    critical_client = LLMClient(
-        base_url=configured_base_url(critical_config),
-        api_key_env=critical_config.get("api_key_env", "OPENAI_API_KEY"),
-        timeout=critical_config.get("timeout", 180)
+    critical_client = LLMClient.from_config(
+        critical_config, config_path=config_path, default_timeout=180
     )
 
     try:
-        embedding_client = EmbeddingClient(
-            base_url=configured_base_url(embedding_config),
-            api_key_env=embedding_config.get("api_key_env", "OPENAI_API_KEY"),
-            model=embedding_config.get("model_name", "text-embedding-3-small"),
-            dimension=embedding_config.get("dimension", 1536)
+        embedding_client = EmbeddingClient.from_config(
+            embedding_config, config_path=config_path
         )
         print("  - Embedding client initialized")
     except Exception as e:
         print(f"  - Warning: Embedding client init failed: {e}")
-        print("  - Memory Bank will use fallback embeddings")
-        embedding_client = None
+        print("  - Vector retrieval disabled; Memory Bank records will have zero vectors")
+        embedding_client = EmbeddingClient(
+            enabled=False, dimension=embedding_config.get("dimension", 1536)
+        )
 
     max_workers = args.workers or offline_config.get("max_workers", 5)
 

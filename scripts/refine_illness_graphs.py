@@ -491,15 +491,16 @@ def main():
 
     critical_config = config.get("critical_model", {})
 
-    client = LLMClient(
-        base_url=configured_base_url(critical_config),
-        api_key_env=critical_config.get("api_key_env", "OPENAI_API_KEY"),
-        timeout=critical_config.get("timeout", 180)
+    client = LLMClient.from_config(
+        critical_config, config_path=config_path, default_timeout=180
     )
     model = critical_config.get("model_name", "gpt-4o")
 
     print(f"LLM Model: {model}")
-    print(f"API Base:  {configured_base_url(critical_config) or 'official OpenAI API'}")
+    if client.is_local:
+        print(f"Local Model: {client.local_backend.model_path}")
+    else:
+        print(f"API Base:  {configured_base_url(critical_config) or 'official OpenAI API'}")
     print("=" * 70)
 
     all_logs = {}

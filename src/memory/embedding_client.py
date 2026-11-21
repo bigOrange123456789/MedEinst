@@ -7,6 +7,7 @@ import time
 import numpy as np
 from typing import List, Optional, Union
 from openai import OpenAI
+from src.utils.runtime_config import config_bool, configured_base_url, is_loopback_url
 
 
 class EmbeddingClient:
@@ -20,11 +21,26 @@ class EmbeddingClient:
         model: str = "text-embedding-3-small",
         dimension: int = 1536,
         max_retries: int = 3,
-        retry_delay: float = 1.0
+        retry_delay: float = 1.0,
+        enabled: bool = True,
+        timeout: float = 120
     ):
 
+        self.enabled = config_bool(enabled, default=True)
+        self.model = model
+        self.dimension = int(dimension)
+        self.max_retries = int(max_retries)
+        self.retry_delay = float(retry_delay)
+        self.client = None
+        if not self.enabled:
+            return
+
         if api_key is None:
-            api_key = os.getenv(api_key_env)
+            api_key = os.getenv(api_key_env) if api_key_env else None
+
+        # Local OpenAI-compatible servers often run without authentication.
+        if not api_key and is_loopback_url(base_url):
+            api_key = "local"
 
         if not api_key:
             raise ValueError(
@@ -33,14 +49,31 @@ class EmbeddingClient:
 
         self.client = OpenAI(
             base_url=base_url or "https://api.openai.com/v1",
-            api_key=api_key
+            api_key=api_key,
+            timeout=timeout,
+            max_retries=0,
         )
-        self.model = model
-        self.dimension = dimension
-        self.max_retries = max_retries
-        self.retry_delay = retry_delay
+
+    @classmethod
+    def from_config(cls, section: dict, config_path=None):
+        """Build a remote/local HTTP embedding client, or explicitly disable it."""
+        section = section or {}
+        return cls(
+            base_url=configured_base_url(section),
+            api_key=section.get("api_key"),
+            api_key_env=section.get("api_key_env", "OPENAI_API_KEY"),
+            model=section.get("model_name", section.get("model", "text-embedding-3-small")),
+            dimension=section.get("dimension", 1536),
+            max_retries=section.get("max_retries", 3),
+            retry_delay=section.get("retry_delay", 1.0),
+            enabled=config_bool(section.get("enabled"), default=True),
+            timeout=section.get("timeout", 120),
+        )
 
     def embed_text(self, text: str) -> np.ndarray:
+
+        if not self.enabled:
+            raise RuntimeError("Embeddings are disabled (embedding.enabled: false).")
 
         if not text or not text.strip():
 

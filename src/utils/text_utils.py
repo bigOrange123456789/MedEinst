@@ -2,7 +2,6 @@
 
 from src.utils.console import tr
 
-import os
 import numpy as np
 from typing import List, Dict, Optional, Tuple, Any
 from functools import lru_cache
@@ -45,7 +44,9 @@ class SemanticMatcher:
         self.use_cache = use_cache
 
         self._embedding_client = embedding_client
-        self._embedding_available = embedding_client is not None
+        self._embedding_available = (
+            embedding_client is not None and getattr(embedding_client, "enabled", True)
+        )
         self._cache: Dict[str, np.ndarray] = {}
 
         if embedding_client is None:
@@ -58,7 +59,6 @@ class SemanticMatcher:
             import yaml
 
             from src.memory.embedding_client import EmbeddingClient
-            from src.utils.runtime_config import configured_base_url
 
             # 与 scripts/run_ecr_agent.py 保持一致：从 settings.yaml 读取嵌入配置，
             # 而不是硬编码环境变量名。
@@ -67,24 +67,19 @@ class SemanticMatcher:
                 config = yaml.safe_load(handle) or {}
 
             embedding_config = config.get("embedding", {}) or {}
-            api_key_env = embedding_config.get("api_key_env", "OPENAI_API_KEY")
-
-            if os.getenv(api_key_env):
-                self._embedding_client = EmbeddingClient(
-                    base_url=configured_base_url(embedding_config),
-                    api_key_env=api_key_env,
-                    model=embedding_config.get("model_name", "text-embedding-3-small"),
-                    dimension=embedding_config.get("dimension", 1536),
-                )
-                self._embedding_available = True
+            self._embedding_client = EmbeddingClient.from_config(
+                embedding_config, config_path=config_path
+            )
+            self._embedding_available = self._embedding_client.enabled
+            if self._embedding_available:
                 print(tr(
                     "[SemanticMatcher] Embedding client initialized successfully",
                     '[语义匹配] 嵌入客户端初始化成功',
                 ))
             else:
                 print(tr(
-                    f"[SemanticMatcher] Warning: No API key found ({api_key_env}), embedding disabled",
-                    f'[语义匹配] 警告：未找到 API 密钥（{api_key_env}），嵌入功能已禁用',
+                    "[SemanticMatcher] Embeddings disabled by configuration; using text matching",
+                    '[语义匹配] 配置已禁用嵌入，使用文本匹配',
                 ))
 
         except Exception as e:
