@@ -88,9 +88,11 @@ embedding:
 
 这是字段修改示例，其余已有配置可以保留。`localhost: true` 时无需 API Key，`base_url` 和对应环境变量不会用于模型调用。`model_path` 必须是包含模型配置、tokenizer 和权重的 Transformers 目录；GGUF 文件请通过本地兼容 HTTP 服务使用。路径相对 `settings.yaml` 所在目录解析，Windows 路径建议使用 `/` 或 YAML 单引号。
 
-设备由程序自动检测，无需在 YAML 中配置：优先使用当前 PyTorch 环境可用的 CUDA 显卡（`cuda:0`），其次使用 Apple MPS；没有可用显卡时使用 CPU。首次加载模型时会打印所选设备，加载完成后打印当前 GPU/CPU 运行模式，CUDA 模式还会显示显卡名称。判断依据是 PyTorch 能否使用显卡，因此 CPU 版 PyTorch 或不可用的驱动会选择 CPU。
+设备由程序自动检测，无需在 YAML 中配置：优先使用当前 PyTorch 环境可用的 CUDA 显卡，其次使用 Apple MPS；没有可用显卡时使用 CPU。串行模式默认使用 `cuda:0`。首次加载模型时会打印所选设备，加载完成后打印当前 GPU/CPU 运行模式，CUDA 模式还会显示显卡名称。判断依据是 PyTorch 能否使用显卡，因此 CPU 版 PyTorch 或不可用的驱动会选择 CPU。
 
-运行离线 CGME 或图精化时，将 `critical_model` 段同样设置为 `localhost: true` 并填写模型目录；它与 `api` 相互独立。相同加载配置会复用一份权重，本地并发请求会排队生成。模型首次调用时才加载；加载失败会明确返回错误。普通 CausalLM 和 Qwen3-VL 等视觉语言模型均走文本推理，本项目没有增加图片输入流程。Qwen3-VL 需要支持该架构的 Transformers 版本（至少 4.57）。
+通过 `start.bat` 或 `run_ecr_agent.py --parallel --workers N` 启动本地权重推理时，工作线程会按启动顺序固定绑定到可用 CUDA 显卡，日志会显示线程与设备的对应关系。例如 4 个线程、4 张卡时分别使用 `cuda:0/1/2/3`；4 个线程、2 张卡时分别使用 `cuda:0/1/0/1`。线程数超过卡数时，同卡线程共享模型并排队生成，不同卡可同时推理。每张使用中的显卡按需加载一份完整模型，因此每张卡都需要足够显存；线程数少于卡数时只使用对应数量的卡。设置 `CUDA_VISIBLE_DEVICES` 后只会分配 PyTorch 可见的显卡，日志中的编号为可见设备的逻辑编号。单卡、MPS 和 CPU 模式继续共享一个模型。HTTP 服务模式的显卡分配仍由服务端负责。
+
+运行离线 CGME 或图精化时，将 `critical_model` 段同样设置为 `localhost: true` 并填写模型目录；它与 `api` 相互独立。相同加载配置在同一设备上复用一份权重，本地并发请求在该设备上排队生成。模型首次调用时才加载；加载失败会明确返回错误。普通 CausalLM 和 Qwen3-VL 等视觉语言模型均走文本推理，本项目没有增加图片输入流程。Qwen3-VL 需要支持该架构的 Transformers 版本（至少 4.57）。
 
 `max_new_tokens`、`temperature` 设置后会覆盖各推理阶段传入的对应值，不设置则沿用阶段默认值；`chat_template_kwargs` 传给本地聊天模板。模板处理遵循 [Transformers 官方聊天模板说明](https://huggingface.co/docs/transformers/main/en/chat_templating)，LoRA 通过 [PEFT 的加载接口](https://huggingface.co/docs/peft/en/package_reference/peft_model)加载。
 

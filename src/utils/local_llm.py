@@ -1,11 +1,29 @@
 """Lazy, shared Transformers inference for the project's text-only agent calls."""
 
 from pathlib import Path
-from threading import RLock
+from threading import RLock, current_thread, local
 from weakref import WeakValueDictionary
 import json
 
 from src.utils.console import tr
+
+
+_worker_context = local()
+
+
+class LocalInferenceWorkers:
+    """Assign stable worker slots without importing optional local dependencies."""
+
+    def __init__(self):
+        self._next_slot = 0
+        self._lock = RLock()
+
+    def initialize(self):
+        # A fresh allocator per executor makes repeated runs start at GPU 0.
+        with self._lock:
+            _worker_context.slot = self._next_slot
+            self._next_slot += 1
+        _worker_context.device_reported = False
 
 
 def is_vision_language_model(config) -> bool:
@@ -17,10 +35,12 @@ def is_vision_language_model(config) -> bool:
 
 
 class LocalTransformersBackend:
-    # Sharing both the weights and the lock avoids duplicate VRAM allocations and
-    # concurrent generate calls when the main model and critic use the same model.
+    # Equal model configurations share one replica and generation lock per GPU.
     _instances = WeakValueDictionary()
     _instances_lock = RLock()
+    # Transformers/Accelerate loading can temporarily modify process-wide state.
+    # Serialize loading only; already loaded replicas can generate independently.
+    _load_lock = RLock()
 
     @classmethod
     def shared(cls, **options):
@@ -33,7 +53,7 @@ class LocalTransformersBackend:
             return backend
 
     def __init__(self, model_path, lora_adapter=None, torch_dtype="auto",
-                 trust_remote_code=True):
+                 trust_remote_code=True, *, cuda_index=None):
         self.model_path = self._directory(model_path, "model_path")
         self.lora_adapter = self._directory(lora_adapter, "lora_adapter") if lora_adapter else None
         self.device = None
@@ -42,6 +62,44 @@ class LocalTransformersBackend:
         self.model = None
         self.tokenizer = None
         self._lock = RLock()
+        self._cuda_index = cuda_index
+        self._cuda_count = None
+        self._replicas = {}
+        self._replicas_lock = RLock()
+
+    def _worker_backend(self):
+        slot = getattr(_worker_context, "slot", None)
+        if slot is None or self._cuda_index is not None:
+            return self
+        with self._replicas_lock:
+            if self._cuda_count is None:
+                try:
+                    import torch
+                except ImportError:
+                    # Keep the actionable dependency error raised by _load().
+                    return self
+                self._cuda_count = torch.cuda.device_count() if torch.cuda.is_available() else 0
+            if not self._cuda_count:
+                return self
+            index = slot % self._cuda_count
+            if not _worker_context.device_reported:
+                worker = current_thread().name
+                print(tr(
+                    f"[LocalLLM] Worker {worker} -> cuda:{index} "
+                    f"({self._cuda_count} visible CUDA GPUs)",
+                    f"[本地模型] 工作线程 {worker} -> cuda:{index} "
+                    f"（检测到 {self._cuda_count} 张可用 CUDA 显卡）",
+                ), flush=True)
+                _worker_context.device_reported = True
+            if index == 0:
+                return self
+            if index not in self._replicas:
+                self._replicas[index] = type(self)(
+                    model_path=self.model_path, lora_adapter=self.lora_adapter,
+                    torch_dtype=self.torch_dtype, trust_remote_code=self.trust_remote_code,
+                    cuda_index=index,
+                )
+            return self._replicas[index]
 
     @staticmethod
     def _directory(value, name):
@@ -53,16 +111,23 @@ class LocalTransformersBackend:
         return str(path)
 
     @staticmethod
-    def _select_device(torch):
+    def _select_device(torch, cuda_index=0):
         """Use an accelerator exposed by this PyTorch runtime, otherwise CPU."""
         if torch.cuda.is_available():
-            return "cuda:0", f"GPU (CUDA, cuda:0, {torch.cuda.get_device_name(0)})"
+            device = f"cuda:{cuda_index}"
+            return device, f"GPU (CUDA, {device}, {torch.cuda.get_device_name(cuda_index)})"
         mps = getattr(getattr(torch, "backends", None), "mps", None)
         if mps is not None and mps.is_available():
             return "mps", "GPU (Apple MPS, mps)"
         return "cpu", "CPU (cpu)"
 
     def _load(self):
+        if self.model is not None:
+            return
+        with self._load_lock:
+            self._load_model()
+
+    def _load_model(self):
         if self.model is not None:
             return
         try:
@@ -74,7 +139,7 @@ class LocalTransformersBackend:
                 "Install requirements-local.txt in the environment used to run MedEinst."
             ) from exc
 
-        self.device, mode = self._select_device(torch)
+        self.device, mode = self._select_device(torch, self._cuda_index or 0)
         print(tr(
             f"[LocalLLM] Auto-selected {mode}; loading model: {self.model_path}",
             f"[本地模型] 自动选择 {mode}，正在加载模型：{self.model_path}",
@@ -117,6 +182,12 @@ class LocalTransformersBackend:
 
     def generate(self, messages, max_new_tokens, temperature=0.0, top_p=0.95,
                  repetition_penalty=1.0, chat_template_kwargs=None):
+        backend = self._worker_backend()
+        if backend is not self:
+            return backend.generate(
+                messages, max_new_tokens, temperature, top_p,
+                repetition_penalty, chat_template_kwargs,
+            )
         with self._lock:
             self._load()
             import torch

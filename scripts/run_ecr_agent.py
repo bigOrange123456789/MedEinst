@@ -27,6 +27,7 @@ from src.utils.prompt_utils import DIAGNOSIS_ID_MAP
 from src.graph.state import AgentState
 from src.data.medeinst_adapter import CasePair, load_pairs
 from src.utils.runtime_config import config_relative_path
+from src.utils.local_llm import LocalInferenceWorkers
 
 
 @dataclass
@@ -423,7 +424,11 @@ class OnlineInferenceRunner:
         results = []
 
         with tqdm(total=len(tasks), desc=tr("Online Inference (Parallel)", "在线推理（并行）")) as pbar:
-            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            with ThreadPoolExecutor(
+                max_workers=self.max_workers,
+                initializer=LocalInferenceWorkers().initialize,
+                thread_name_prefix="ecr-worker",
+            ) as executor:
                 future_to_task = {
                     executor.submit(self.process_single_case, case_dir, case_type): (case_dir, case_type)
                     for case_dir, case_type in tasks
