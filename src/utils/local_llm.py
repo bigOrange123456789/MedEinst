@@ -1,5 +1,7 @@
 """Lazy, shared Transformers inference for the project's text-only agent calls."""
 
+from copy import deepcopy
+from inspect import signature
 from pathlib import Path
 from threading import RLock, current_thread, local
 from weakref import WeakValueDictionary
@@ -9,6 +11,7 @@ from src.utils.console import tr
 
 
 _worker_context = local()
+_PREFIX_CACHE_ERRORS = (AttributeError, IndexError, RuntimeError, TypeError, ValueError)
 
 
 class LocalInferenceWorkers:
@@ -66,6 +69,8 @@ class LocalTransformersBackend:
         self._cuda_count = None
         self._replicas = {}
         self._replicas_lock = RLock()
+        self._prefix_cache = None
+        self._prefix_cache_disabled = False
 
     def _worker_backend(self):
         slot = getattr(_worker_context, "slot", None)
@@ -180,16 +185,76 @@ class LocalTransformersBackend:
             f"[本地模型] 当前运行模式：{mode}",
         ), flush=True)
 
+    def _copy_prefix_cache(self, messages, inputs, template_options, message_count):
+        import torch
+
+        config = self.model.config
+        generation_config = self.model.generation_config
+        if (not 0 < message_count < len(messages)
+                or config.is_encoder_decoder
+                or is_vision_language_model(config)
+                or generation_config.use_cache is False
+                or generation_config.cache_implementation is not None
+                or set(inputs) != {"input_ids", "attention_mask"}):
+            return None
+
+        prefix_prompt = self.tokenizer.apply_chat_template(
+            messages[:message_count], **dict(template_options, add_generation_prompt=False),
+        )
+        if self._prefix_cache is not None and self._prefix_cache[0] == prefix_prompt:
+            _, prefix_ids, prefix_mask, cache = self._prefix_cache
+        else:
+            prefix_inputs = self.tokenizer(prefix_prompt, return_tensors="pt", add_special_tokens=False)
+            if set(prefix_inputs) != {"input_ids", "attention_mask"}:
+                return None
+            prefix_ids = prefix_inputs["input_ids"]
+            prefix_mask = prefix_inputs["attention_mask"]
+            cache = None
+
+        prefix_length = prefix_ids.shape[1]
+        if (not 0 < prefix_length < inputs["input_ids"].shape[1]
+                or not torch.equal(prefix_ids, inputs["input_ids"][:, :prefix_length])
+                or not torch.equal(prefix_mask, inputs["attention_mask"][:, :prefix_length])):
+            return None
+
+        if cache is None:
+            # The logits from prefill are discarded. Avoid allocating one vocabulary vector per token.
+            prefill_options = {}
+            if "logits_to_keep" in signature(self.model.forward).parameters:
+                prefill_options["logits_to_keep"] = 1
+            # Keep at most one prefix per replica, including while building a replacement.
+            self._prefix_cache = None
+            prefilled = self.model(
+                **prefix_inputs.to(self.model.device), use_cache=True, return_dict=True, **prefill_options,
+            )
+            cache = prefilled.past_key_values
+            if cache.get_seq_length() != prefix_length:
+                raise ValueError("Model returned a cache with an unexpected sequence length")
+            self._prefix_cache = (prefix_prompt, prefix_ids, prefix_mask, cache)
+
+        # Transformers extends the supplied cache during decoding. Each case owns its copy.
+        return deepcopy(cache)
+
+    def _disable_prefix_cache(self, error):
+        self._prefix_cache = None
+        self._prefix_cache_disabled = True
+        reason = type(error).__name__
+        print(tr(
+            f"[LocalLLM] Prefix cache unavailable ({reason}). Using normal generation.",
+            f"[本地模型] 前缀缓存不可用（{reason}），改用常规生成。",
+        ), flush=True)
+
     def generate(self, messages, max_new_tokens, temperature=0.0, top_p=0.95,
-                 repetition_penalty=1.0, chat_template_kwargs=None):
+                 repetition_penalty=1.0, chat_template_kwargs=None, *, prefix_message_count=None):
         backend = self._worker_backend() # <src.utils.local_llm.LocalTransformersBackend object>
         if backend is not self: # False
+            cache_options = {} if prefix_message_count is None else {"prefix_message_count": prefix_message_count}
             return backend.generate(
                 messages, max_new_tokens, temperature, top_p,
-                repetition_penalty, chat_template_kwargs,
+                repetition_penalty, chat_template_kwargs, **cache_options,
             )
         with self._lock:
-            self._load() # 处理每个病例的时候重新读入模型
+            self._load()  # 首次调用时加载模型，后续病例复用。
             import torch
 
             # Existing agents only send text. VL loading stays text-only, as in lab2.py, without requiring image/video processor dependencies.
@@ -200,6 +265,14 @@ class LocalTransformersBackend:
             prompt = self.tokenizer.apply_chat_template(messages, **template_options) # 通过huggingface的apply_chat_template：将上下文messages数组转换为文本字符串
             inputs = self.tokenizer(prompt, return_tensors="pt", add_special_tokens=False) # 编码：对话文本字符串 => 张量
             # return_tensors="pt"：让结果变成张量；add_special_tokens=F ： 不加开始结束等控制符( 开始BOS、结束EOS)
+            case_cache = None
+            if prefix_message_count is not None and not self._prefix_cache_disabled:
+                try:
+                    with torch.inference_mode():
+                        case_cache = self._copy_prefix_cache(messages, inputs, template_options, prefix_message_count)
+                except _PREFIX_CACHE_ERRORS as exc:
+                    self._disable_prefix_cache(exc)
+
             inputs = inputs.to(self.model.device)
             generation = dict(
                 max_new_tokens=max_new_tokens,        # 4096
@@ -216,8 +289,16 @@ class LocalTransformersBackend:
             if pad_id is not None: # True
                 generation["pad_token_id"] = pad_id
             with torch.inference_mode(): # 推理模式，关闭训练所需的求导
-                output = self.model.generate(**inputs, **generation) # 运行自回归解码
-                # generation包含四项内容：最大长度、随机性、重复性、空白填空符。 {'max_new_tokens': 4096, 'do_sample': False, 'repetition_penalty': 1.0, 'pad_token_id': 151643}
+                output = None
+                if case_cache is not None:
+                    try:
+                        # Keep the full logical prompt. Transformers forwards only its uncached suffix.
+                        output = self.model.generate(**inputs, **generation, past_key_values=case_cache)
+                    except _PREFIX_CACHE_ERRORS as exc:
+                        self._disable_prefix_cache(exc)
+                    case_cache = None
+                if output is None:
+                    output = self.model.generate(**inputs, **generation)
             sequences = getattr(output, "sequences", output)
             generated = sequences[0][inputs["input_ids"].shape[1]:]
             return self.tokenizer.decode(generated, skip_special_tokens=True)

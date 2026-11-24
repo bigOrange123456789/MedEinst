@@ -131,6 +131,8 @@ python scripts/run_ecr_agent.py \
 
 控制台默认以英文输出；添加 `--console-language zh` 可切换为中文，`--console-language en` 切回英文。查看中文帮助：`python scripts/run_ecr_agent.py --console-language zh --help`。Windows CMD 示例见[控制台语言配置](docs/configuration_zh.md#控制台语言)。
 
+使用本地 Transformers 跑在线推理时，可加 `--kv-prefix-cache` 复用 Phase 1 Track A 的固定提示和示例。默认关闭。对比两种模式时，可用不同的 `--output-dir` 加 `--detailed-timing` 跑同一批病例，再核对耗时和诊断输出。运行摘要会记录开关设置。
+
 ## 🔄 离线 CGME：构建知识与记忆
 
 仓库自带的 `data/medeinst_support_853.json` 保留了论文中固定的支持集选择。从[参考集](https://huggingface.co/datasets/zhui711/MedEinst)下载 `train.jsonl`，然后运行：

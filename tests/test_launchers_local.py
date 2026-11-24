@@ -31,8 +31,9 @@ class LocalLauncherTests(unittest.TestCase):
         with ExitStack() as stack:
             stack.enter_context(redirect_stdout(io.StringIO()))
             llm_factory = stack.enter_context(patch("src.utils.api_client.LLMClient.from_config"))
+            llm_factory.return_value.is_local = True
             embedding_factory = stack.enter_context(patch("src.memory.embedding_client.EmbeddingClient.from_config"))
-            stack.enter_context(patch("src.agents.phase1_manager.Phase1Manager"))
+            phase1 = stack.enter_context(patch("src.agents.phase1_manager.Phase1Manager"))
             hybrid = stack.enter_context(patch("src.agents.phase2_hybrid_engine.Phase2HybridEngine"))
             memory = stack.enter_context(patch("src.memory.memory_bank.MemoryBankManager"))
             judge = stack.enter_context(patch("src.agents.phase3_memory_judge.create_judge_agent"))
@@ -40,6 +41,7 @@ class LocalLauncherTests(unittest.TestCase):
             runner = run_ecr_agent.OnlineInferenceRunner(
                 self.config, Mock(), config_path=str(self.config_path),
                 memory_bank_dir=str(self.root / "memory"),
+                kv_prefix_cache=True,
             )
 
         llm_factory.assert_called_once_with(
@@ -47,9 +49,35 @@ class LocalLauncherTests(unittest.TestCase):
         embedding_factory.assert_called_once_with(
             self.config["embedding"], config_path=self.config_path)
         self.assertIs(runner.llm_client, llm_factory.return_value)
+        phase1.assert_called_once_with(runner.llm_client, "local-main", kv_prefix_cache=True)
         self.assertIs(hybrid.call_args.kwargs["embedding_client"], embedding_factory.return_value)
         self.assertIs(memory.call_args.kwargs["embedding_client"], embedding_factory.return_value)
         self.assertIs(judge.call_args.kwargs["llm_client"], llm_factory.return_value)
+
+    def test_online_cli_prefix_cache_is_opt_in(self):
+        for enabled in (False, True):
+            with self.subTest(enabled=enabled), ExitStack() as stack:
+                output_dir = self.root / f"output_{enabled}"
+                argv = ["run_ecr_agent.py", "--config", str(self.config_path), "--benchmark-set", "unused.jsonl",
+                        "--output-dir", str(output_dir)]
+                if enabled:
+                    argv.append("--kv-prefix-cache")
+                stack.enter_context(patch.object(sys, "argv", argv))
+                stack.enter_context(redirect_stdout(io.StringIO()))
+                stack.enter_context(patch.object(run_ecr_agent, "load_pairs", return_value=[]))
+                runner = stack.enter_context(patch.object(run_ecr_agent, "OnlineInferenceRunner"))
+                runner.return_value.run.return_value = []
+
+                run_ecr_agent.main()
+
+                self.assertIs(runner.call_args.kwargs["kv_prefix_cache"], enabled)
+                summary = json.loads((output_dir / "inference_summary.json").read_text(encoding="utf-8"))
+                self.assertIs(summary["config"]["kv_prefix_cache"], enabled)
+
+    def test_online_runner_rejects_prefix_cache_for_http_client(self):
+        with patch("src.utils.api_client.LLMClient.from_config", return_value=Mock(is_local=False)), \
+                self.assertRaisesRegex(ValueError, "--kv-prefix-cache"):
+            run_ecr_agent.OnlineInferenceRunner(self.config, Mock(), kv_prefix_cache=True)
 
     def test_cgme_passes_main_critic_and_disabled_embeddings_to_trainers(self):
         for concurrent in (False, True):

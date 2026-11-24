@@ -9,12 +9,14 @@ from src.agents.phase1_trackB import Phase1TrackBAgent
 class Phase1Manager: 
     """根据病例生成候选疾病集合、症状集合。Combine intuitive candidates with analytic observations."""
 
-    def __init__(self, llm_client: LLMClient, model_name: str = "gpt-4o"):
+    def __init__(self, llm_client: LLMClient, model_name: str = "gpt-4o", *,
+                 kv_prefix_cache: bool = False):
 
         self.llm_client = llm_client
         self.model_name = model_name
 
-        self.track_a = Phase1TrackAAgent(llm_client, model_name=model_name) # 用于生成候选疾病集合
+        self.track_a = Phase1TrackAAgent(llm_client, model_name=model_name,
+                                         kv_prefix_cache=kv_prefix_cache) # 用于生成候选疾病集合
         self.track_b = Phase1TrackBAgent(llm_client, model_name=model_name) # 用于生成症状集合
 
     def process(

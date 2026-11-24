@@ -15,6 +15,7 @@ from unittest.mock import Mock, patch
 
 import yaml
 
+from src.agents.phase1_manager import Phase1Manager
 from src.agents.phase1_perception import Phase1TrackAAgent
 from src.utils.api_client import LLMClient
 from src.utils.local_llm import LocalTransformersBackend
@@ -23,13 +24,36 @@ from src.utils.local_llm import LocalTransformersBackend
 class TensorBatch(dict):
     """Minimal BatchEncoding-like container; tokens remain observable in tests."""
 
-    def __init__(self):
-        super().__init__(input_ids=SimpleNamespace(shape=(1, 3)), attention_mask=[1, 1, 1])
+    def __init__(self, tokens=None):
+        if tokens is None:
+            super().__init__(input_ids=SimpleNamespace(shape=(1, 3)), attention_mask=[1, 1, 1])
+        else:
+            super().__init__(input_ids=TokenRows([tokens]), attention_mask=TokenRows([[1] * len(tokens)]))
         self.device = None
 
     def to(self, device):
         self.device = device
         return self
+
+
+class TokenRows(list):
+    @property
+    def shape(self):
+        return len(self), len(self[0])
+
+    def __getitem__(self, key):
+        if isinstance(key, tuple):
+            rows, columns = key
+            return TokenRows(row[columns] for row in super().__getitem__(rows))
+        return super().__getitem__(key)
+
+
+class MutablePrefixCache:
+    def __init__(self, tokens):
+        self.tokens = list(tokens)
+
+    def get_seq_length(self):
+        return len(self.tokens)
 
 
 class LocalLLMTests(unittest.TestCase):
@@ -79,6 +103,46 @@ class LocalLLMTests(unittest.TestCase):
 
     def client(self, **kwargs):
         return LLMClient(localhost=True, model_path=str(self.model_path), **kwargs)
+
+    def fake_prefix_runtime(self):
+        self.fake_runtime(model_type="qwen2")
+        self.torch.equal = lambda left, right: left == right
+        self.model.config = SimpleNamespace(model_type="qwen2", is_encoder_decoder=False, use_cache=True)
+        self.model.generation_config = SimpleNamespace(use_cache=None, cache_implementation=None)
+        self.tokenizer.apply_chat_template.side_effect = (
+            lambda messages, *, add_generation_prompt, **_: (
+                "".join(message["content"] for message in messages) + ("!" if add_generation_prompt else "")
+            )
+        )
+
+        def tokenize(prompt, **_):
+            # Reproduce a token boundary that changes when a particular suffix is appended.
+            return TensorBatch(list(map(ord, prompt.replace("Az", "qz"))))
+
+        def prefill(*, input_ids, **_):
+            cache = MutablePrefixCache(input_ids[0])
+            self.built_caches.append(cache)
+            return SimpleNamespace(past_key_values=cache)
+
+        def generate(*, input_ids, past_key_values=None, **_):
+            if past_key_values is not None:
+                self.cache_inputs.append(past_key_values.tokens.copy())
+                past_key_values.tokens.extend(input_ids[0][past_key_values.get_seq_length():])
+            return [input_ids[0] + [90, 91]]
+
+        self.tokenizer.side_effect = tokenize
+        self.built_caches = []
+        self.cache_inputs = []
+        self.model.side_effect = prefill
+        self.model.generate.side_effect = generate
+
+    def prefix_messages(self, case, system="S"):
+        return [
+            {"role": "system", "content": system},
+            {"role": "user", "content": "U"},
+            {"role": "assistant", "content": "A"},
+            {"role": "user", "content": case},
+        ]
 
     def test_local_mode_needs_no_api_key_and_loads_dependencies_lazily(self):
         with patch.dict(sys.modules, {"torch": None, "transformers": None, "peft": None}):
@@ -186,11 +250,13 @@ class LocalLLMTests(unittest.TestCase):
         stdout = io.StringIO()
         with redirect_stdout(stdout):
             client = LLMClient(base_url="http://localhost:8000/v1")
-            result = client.generate_json([], "served-model")
+            result = client.generate_json([], "served-model", prefix_message_count=3)
         self.assertIsNone(result["error"])
         self.torch.cuda.is_available.assert_not_called()
         self.torch.backends.mps.is_available.assert_not_called()
         self.assertEqual(stdout.getvalue(), "")
+        request = self.openai.return_value.chat.completions.create.call_args.kwargs
+        self.assertNotIn("prefix_message_count", request)
 
     def test_causal_generation_decodes_only_new_tokens_and_preserves_pad_zero(self):
         self.fake_runtime(text='private reasoning</think> {"ok": true}')
@@ -213,6 +279,8 @@ class LocalLLMTests(unittest.TestCase):
         self.assertNotIn("temperature", request)
         self.assertNotIn("top_p", request)
         self.assertNotIn("eos_token_id", request)
+        self.assertNotIn("past_key_values", request)
+        self.model.assert_not_called()
         self.assertEqual(self.inputs.device, "cpu")
         self.model.eval.assert_called_once()
         self.torch.inference_mode.assert_called_once()
@@ -222,6 +290,67 @@ class LocalLLMTests(unittest.TestCase):
                        self.transformers.AutoModelForCausalLM):
             self.assertTrue(loader.from_pretrained.call_args.kwargs["local_files_only"])
         self.openai.assert_not_called()
+
+    def test_prefix_cache_reuses_prefill_without_mixing_cases(self):
+        self.fake_prefix_runtime()
+        client = self.client()
+
+        for case in ("x", "y"):
+            result = client.generate_json(self.prefix_messages(case), "local", prefix_message_count=3)
+            self.assertIsNone(result["error"])
+
+        prefix = list(map(ord, "SUA"))
+        self.assertEqual(len(self.built_caches), 1)
+        self.assertEqual(self.built_caches[0].tokens, prefix)
+        self.assertEqual(self.cache_inputs, [prefix, prefix])
+        requests = [call.kwargs for call in self.model.generate.call_args_list]
+        self.assertIsNot(requests[0]["past_key_values"], requests[1]["past_key_values"])
+        self.assertEqual([request["input_ids"][0] for request in requests],
+                         [list(map(ord, text)) for text in ("SUAx!", "SUAy!")])
+        self.assertEqual([call.args[0] for call in self.tokenizer.decode.call_args_list], [[90, 91], [90, 91]])
+
+    def test_prefix_cache_does_not_apply_to_changed_or_mismatched_prefix(self):
+        self.fake_prefix_runtime()
+        client = self.client()
+
+        for messages in (self.prefix_messages("x"), self.prefix_messages("z"),
+                         self.prefix_messages("y", system="T")):
+            result = client.generate_json(messages, "local", prefix_message_count=3)
+            self.assertIsNone(result["error"])
+
+        mismatched = self.model.generate.call_args_list[1].kwargs
+        self.assertNotIn("past_key_values", mismatched)
+        self.assertEqual(self.cache_inputs, [list(map(ord, prefix)) for prefix in ("SUA", "TUA")])
+        self.assertEqual(len(self.built_caches), 2)
+
+    def test_prefix_cache_respects_model_cache_disable_setting(self):
+        self.fake_prefix_runtime()
+        self.model.generation_config.use_cache = False
+
+        result = self.client().generate_json(self.prefix_messages("x"), "local", prefix_message_count=3)
+
+        self.assertIsNone(result["error"])
+        self.model.assert_not_called()
+        self.assertNotIn("past_key_values", self.model.generate.call_args.kwargs)
+
+    def test_prefix_cache_generation_failure_falls_back_to_normal_generation(self):
+        self.fake_prefix_runtime()
+        client = self.client()
+        normal_generate = self.model.generate.side_effect
+
+        def reject_prefix_cache(*, past_key_values=None, **kwargs):
+            if past_key_values is not None:
+                raise TypeError("This model version cannot continue from a cache")
+            return normal_generate(**kwargs)
+
+        self.model.generate.side_effect = reject_prefix_cache
+        with redirect_stdout(io.StringIO()):
+            for case in ("x", "y"):
+                result = client.generate_json(self.prefix_messages(case), "local", prefix_message_count=3)
+                self.assertIsNone(result["error"])
+
+        requests = [call.kwargs for call in self.model.generate.call_args_list]
+        self.assertEqual(["past_key_values" in request for request in requests], [True, False, False])
 
     def test_generation_settings_override_agent_defaults_and_enable_sampling(self):
         self.fake_runtime()
@@ -347,6 +476,22 @@ class LocalLLMTests(unittest.TestCase):
         self.assertIsNone(result["error"])
         self.assertEqual(result["final_diagnosis_id"], "45")
         self.assertEqual(result["top_candidates"], ["45", "23"])
+
+    def test_phase1_track_a_requests_cache_without_changing_messages(self):
+        llm_client = Mock()
+        llm_client.generate_json.return_value = {
+            "error": None,
+            "content": '{"top_candidates":["45"],"final_diagnosis_id":"45"}',
+        }
+
+        Phase1Manager(llm_client, "model").track_a.process("Example test narrative.")
+        Phase1Manager(llm_client, "model", kv_prefix_cache=True).track_a.process("Example test narrative.")
+
+        default, enabled = [call.kwargs for call in llm_client.generate_json.call_args_list]
+        self.assertEqual(enabled.pop("prefix_message_count"), 3)
+        self.assertEqual(default, enabled)
+        self.assertEqual([message["role"] for message in default["messages"]],
+                         ["system", "user", "assistant", "user"])
 
     def test_loopback_api_accepts_no_key_and_forwards_extra_body(self):
         self.openai.return_value.chat.completions.create.return_value = SimpleNamespace(

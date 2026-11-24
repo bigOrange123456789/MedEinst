@@ -72,9 +72,11 @@ def normalize_candidate_list(candidates: List[Any]) -> List[str]:
 class Phase1TrackAAgent: # 直觉诊断
     """Generate initial differential diagnosis candidates."""
 
-    def __init__(self, llm_client: LLMClient, model_name: str = "gpt-4o"):
+    def __init__(self, llm_client: LLMClient, model_name: str = "gpt-4o", *,
+                 kv_prefix_cache: bool = False):
         self.llm_client = llm_client # 基模型
         self.model_name = model_name # 基模型名称
+        self.kv_prefix_cache = kv_prefix_cache
 
     def extract_json_from_response(self, response_text: str) -> Optional[Dict[str, Any]]:
 
@@ -313,13 +315,15 @@ class Phase1TrackAAgent: # 直觉诊断
         # 头部添加一行“ **Patient Profile:**”，尾部添加两行“**Instruction:** Analyze the case above following the JSON format.”
         messages.append({"role": "user", "content": user_prompt})
 
+        cache_options = {"prefix_message_count": len(messages) - 1} if self.kv_prefix_cache else {}
         result = self.llm_client.generate_json(
             messages=messages, # 上限文长度为4，四个的role分别为：system【提示】、user【问题示例】、assistant【回复示例】、user【问题】
             model=self.model_name, # DeepSeek-R1-Distill-Qwen-1.5B
             logprobs=False,
 
             temperature=0.0, # 降低随机
-            max_tokens=4096  # token上限为4K
+            max_tokens=4096,  # token上限为4K
+            **cache_options,
         )
 
         if result["error"]:

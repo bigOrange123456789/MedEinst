@@ -140,7 +140,9 @@ class OnlineInferenceRunner:
         parallel: bool = False,         # True
         max_workers: int = 4,           # 4
         config_path: Optional[str] = None,      # G:\Codex\MedEinst\config\settings.yaml
-        verbose_timing: bool = False    # True  # “是否输出逐病例详细耗时”的开关
+        verbose_timing: bool = False,    # True  # “是否输出逐病例详细耗时”的开关
+        *,
+        kv_prefix_cache: bool = False,
     ):
         # Import runtime modules after CLI language selection, including any
         # optional-dependency warnings emitted during import.
@@ -162,13 +164,16 @@ class OnlineInferenceRunner:
         self.llm_client = LLMClient.from_config( # 基模型处理器
             api_config, config_path=config_path, default_timeout=120
         ) # <src.utils.api_client.LLMClient>
+        if kv_prefix_cache and not self.llm_client.is_local:
+            raise ValueError(tr("--kv-prefix-cache requires the local Transformers backend",
+                                "--kv-prefix-cache 需要使用本地 Transformers 后端"))
         self.model_name = api_config.get("model_name", "qwen3-32b") # gpt-6.1-sol
         embedding_config = config.get("embedding", {}) # {'base_url': 'https://api.openai.com/v1', 'enabled': True, ...}
         embedding_client = EmbeddingClient.from_config(
             embedding_config, config_path=config_path
         ) # <src.memory.embedding_client.EmbeddingClient>
 
-        self.phase1 = Phase1Manager(self.llm_client, self.model_name)
+        self.phase1 = Phase1Manager(self.llm_client, self.model_name, kv_prefix_cache=kv_prefix_cache)
 
         # Online DCI starts from Illness Graphs, then extends them with live evidence. 
         # 从疾病图开始在线DCI，然后用实时证据扩展它们。
@@ -434,9 +439,6 @@ class OnlineInferenceRunner:
                     executor.submit(self.process_single_case, case_dir, case_type): (case_dir, case_type)
                     for case_dir, case_type in tasks # case_dir是病例的全部信息:描述、诊断结果、及其编号。 casetype:案例类型。
                 }
-                print("lzc: future_to_task", type(future_to_task))
-                exit(0)
-
                 for future in as_completed(future_to_task):
                     try:
                         result = future.result()
@@ -457,8 +459,6 @@ class OnlineInferenceRunner:
                     pbar.set_postfix_str(f"{status_icon} {result.case_id}")
                     pbar.update(1)
 
-        print("lzc; !!!!")
-        exit(0)
         return results
 
 def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
@@ -726,6 +726,13 @@ Examples:
     )
 
     parser.add_argument(
+        "--kv-prefix-cache",
+        action="store_true",
+        help=tr("Reuse the Track A KV prefix across cases with local Transformers (default: off)",
+                "在本地 Transformers 推理中跨病例复用轨道 A 的 KV 前缀（默认关闭）")
+    )
+
+    parser.add_argument(
         "--model",
         type=str,
         default=None,
@@ -806,6 +813,8 @@ def main():
         print(tr(f"👷 Workers: {args.workers}", f"👷 工作线程数：{args.workers}"))
     if args.detailed_timing:
         print(tr("⏱️ Detailed timing: Enabled", "⏱️ 详细耗时输出：已启用"))
+    if args.kv_prefix_cache:
+        print(tr("Track A KV prefix caching requested", "已请求启用轨道 A 的 KV 前缀缓存"))
     print("=" * 70)
 
     try:
@@ -818,7 +827,8 @@ def main():
             parallel=args.parallel,
             max_workers=args.workers,
             config_path=str(config_path),
-            verbose_timing=args.detailed_timing
+            verbose_timing=args.detailed_timing,
+            kv_prefix_cache=args.kv_prefix_cache,
         )
     except Exception as e:
         print(tr(f"❌ Failed to initialize runner: {e}", f"❌ 推理程序初始化失败：{e}"))
@@ -865,7 +875,8 @@ def main():
             "refined_graph_dir": refined_graph_dir,
             "memory_bank_dir": memory_bank_dir,
             "parallel": args.parallel,
-            "workers": args.workers if args.parallel else 1
+            "workers": args.workers if args.parallel else 1,
+            "kv_prefix_cache": args.kv_prefix_cache,
         }
     }
     if args.detailed_timing:

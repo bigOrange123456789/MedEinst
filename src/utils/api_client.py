@@ -100,16 +100,22 @@ class LLMClient:
         max_tokens: int = 4096,
         max_retries: Optional[int] = None,   # 最多尝试几次
         retry_delay: Optional[float] = None, # 固定等待多少秒
+        *,
+        prefix_message_count: Optional[int] = None,
     ) -> Dict[str, Any]:
         temperature = self.generation_config.get("temperature", temperature)    # 0
         max_tokens = self.generation_config.get("max_new_tokens", max_tokens)   # 4096
         if self.is_local:
+            cache_options = {} if prefix_message_count is None else {
+                "prefix_message_count": prefix_message_count,
+            }
             try:
                 content = self.local_backend.generate(
                     messages, max_new_tokens=max_tokens, temperature=temperature,
                     top_p=self.generation_config.get("top_p", 0.95), # 0.95
                     repetition_penalty=self.generation_config.get("repetition_penalty", 1.0), # 1.0 # 重复惩罚:>1 抑制重复、鼓励用词多样；<1 反而鼓励重复（几乎没人用）
                     chat_template_kwargs=self.chat_template_kwargs, # {} # 每个模型的模板不一样，能用的 key 就不一样
+                    **cache_options,
                 )
                 content = self._answer_content(content)
                 completion = SimpleNamespace(choices=[SimpleNamespace(
