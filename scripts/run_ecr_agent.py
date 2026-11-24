@@ -130,17 +130,17 @@ class OnlineOutputManager:
 class OnlineInferenceRunner:
     """Coordinate the full Online DCI pipeline."""
 
-    def __init__(
+    def __init__( # 初始化推理器
         self,
         config: Dict[str, Any],
         output_manager: OnlineOutputManager,
-        golden_graph_dir: str = "golden_graphs",
-        refined_graph_dir: str = "golden_graphs_refined",
-        memory_bank_dir: str = "memory_bank",
-        parallel: bool = False,
-        max_workers: int = 4,
-        config_path: Optional[str] = None,
-        verbose_timing: bool = False
+        golden_graph_dir: str = "golden_graphs",# G:\Codex\MedEinst\golden_graphs
+        refined_graph_dir: str = "golden_graphs_refined",   # G:\Codex\MedEinst\golden_graphs_refined
+        memory_bank_dir: str = "memory_bank",   # G:\Codex\MedEinst\memory_bank
+        parallel: bool = False,         # True
+        max_workers: int = 4,           # 4
+        config_path: Optional[str] = None,      # G:\Codex\MedEinst\config\settings.yaml
+        verbose_timing: bool = False    # True  # “是否输出逐病例详细耗时”的开关
     ):
         # Import runtime modules after CLI language selection, including any
         # optional-dependency warnings emitted during import.
@@ -157,21 +157,22 @@ class OnlineInferenceRunner:
         self.max_workers = max_workers
         self.verbose_timing = verbose_timing
 
-        config_path = Path(config_path or PROJECT_ROOT / "config" / "settings.yaml").expanduser().resolve()
-        api_config = config.get("api", {})
-        self.llm_client = LLMClient.from_config(
+        config_path = Path(config_path or PROJECT_ROOT / "config" / "settings.yaml").expanduser().resolve() # G:\Codex\MedEinst\config\settings.yaml
+        api_config = config.get("api", {}) # 基模型的参数：{'localhost': True, 'model_path': ... }
+        self.llm_client = LLMClient.from_config( # 基模型处理器
             api_config, config_path=config_path, default_timeout=120
-        )
-        self.model_name = api_config.get("model_name", "qwen3-32b")
-        embedding_config = config.get("embedding", {})
+        ) # <src.utils.api_client.LLMClient>
+        self.model_name = api_config.get("model_name", "qwen3-32b") # gpt-6.1-sol
+        embedding_config = config.get("embedding", {}) # {'base_url': 'https://api.openai.com/v1', 'enabled': True, ...}
         embedding_client = EmbeddingClient.from_config(
             embedding_config, config_path=config_path
-        )
+        ) # <src.memory.embedding_client.EmbeddingClient>
 
         self.phase1 = Phase1Manager(self.llm_client, self.model_name)
 
-        # Online DCI starts from Illness Graphs, then extends them with live evidence.
-        self.phase2 = Phase2HybridEngine(
+        # Online DCI starts from Illness Graphs, then extends them with live evidence. 
+        # 从疾病图开始在线DCI，然后用实时证据扩展它们。
+        self.phase2 = Phase2HybridEngine( # 混合引擎
             llm_client=self.llm_client,
             model_name=self.model_name,
             golden_graph_dir=golden_graph_dir,
@@ -200,12 +201,12 @@ class OnlineInferenceRunner:
         )
 
         print(tr("[OnlineRunner] Initialized with:", "[在线推理] 初始化完成："))
-        print(tr(f"  - Model: {self.model_name}", f"  - 模型：{self.model_name}"))
-        print(tr(f"  - Raw Illness Graphs: {golden_graph_dir}", f"  - 原始疾病图：{golden_graph_dir}"))
+        print(tr(f"  - Model: {self.model_name}", f"  - 模型：{self.model_name}")) # self.model_name = gpt-6.1-sol
+        print(tr(f"  - Raw Illness Graphs: {golden_graph_dir}", f"  - 原始疾病图：{golden_graph_dir}")) # golden_graph_dir = G:\Codex\MedEinst\golden_graphs
         print(tr(f"  - Memory Bank: {'Enabled' if self.memory_bank else 'Disabled'}",
-                 f"  - 范例库：{'已启用' if self.memory_bank else '已禁用'}"))
+                 f"  - 范例库：{'已启用' if self.memory_bank else '已禁用'}")) # self.memory_bank = True
         print(tr(f"  - Parallel: {parallel} (workers: {max_workers})",
-                 f"  - 并行模式：{'是' if parallel else '否'}（工作线程：{max_workers}）"))
+                 f"  - 并行模式：{'是' if parallel else '否'}（工作线程：{max_workers}）")) # parallel=True, max_workers=4
 
     def process_single_case(
         self,
@@ -214,34 +215,34 @@ class OnlineInferenceRunner:
     ) -> OnlineResult:
         from src.utils.graph_tools import summarize_graph_for_judge, calculate_naive_scores
 
-        case_id = case_dir.name
+        case_id = case_dir.name # 这个案例的编号：case_10000
         start_time = time.time()
         # Per-phase processing times, measured on the calling thread so the
         # breakdown is correct even when cases run concurrently.
         phase_times: Dict[str, float] = {}
 
-        try:
+        try: # 开始处理单个案例
             case_info = case_dir.get(case_type)
-            narrative = case_info.narrative
-            ground_truth = case_info.ground_truth
-            gt_id = case_info.ground_truth_id
+            narrative = case_info.narrative # 病例的描述
+            ground_truth = case_info.ground_truth # 真实诊断结果
+            gt_id = case_info.ground_truth_id # 真实诊断结果的编号
 
             # Phase 1
             phase_start = time.time()
-            phase1_result = self.phase1.process(narrative)
+            phase1_result = self.phase1.process(narrative) # 根据病例的描述分解出：症状集合、候选疾病集合
             phase_times["phase1"] = time.time() - phase_start
 
-            if phase1_result.get("error"):
+            if phase1_result.get("error"): # 阶段1失败
                 raise Exception(f"Phase 1 error: {phase1_result['error']}")
 
             state: AgentState = {
-                "case_id": case_id,
-                "input_case": {
+                "case_id": case_id, # 案例编号：case_10000
+                "input_case": { # 输入
                     "narrative": narrative,
                     "ground_truth": ground_truth,
                     "ground_truth_id": gt_id
                 },
-                "phase1_result": phase1_result,
+                "phase1_result": phase1_result, # 阶段1结果
                 "graph_json": None,
                 "graph_summary": None,
                 "naive_scores": None,
@@ -256,27 +257,27 @@ class OnlineInferenceRunner:
 
             # Phase 2 (Hybrid Engine)
             phase_start = time.time()
-            state = self.phase2.process(state)
+            state = self.phase2.process(state) # 执行阶段2，推理图分析
 
-            if state.get("status") == "failed":
+            if state.get("status") == "failed": # 如果阶段2失败
                 phase_times["phase2"] = time.time() - phase_start
                 raise Exception(f"Phase 2 error: {state.get('error_log')}")
 
             graph_json = state.get("graph_json", {})
 
-            graph_summary = summarize_graph_for_judge(graph_json)
-            state["graph_summary"] = graph_summary
+            graph_summary = summarize_graph_for_judge(graph_json) # 根据推理图结构给出一段总结文字
+            state["graph_summary"] = graph_summary 
 
-            naive_scores = calculate_naive_scores(graph_json)
-            state["naive_scores"] = naive_scores
+            naive_scores = calculate_naive_scores(graph_json) # 计算每个候选疾病的评分
+            state["naive_scores"] = naive_scores 
             phase_times["phase2"] = time.time() - phase_start
 
             # Phase 3 (Memory-Augmented Judge)
             phase_start = time.time()
-            state = self.phase3.process(state)
+            state = self.phase3.process(state) # 执行阶段3, 给出诊断结果
             phase_times["phase3"] = time.time() - phase_start
 
-            if state.get("status") == "failed":
+            if state.get("status") == "failed": #如果阶段3失败
                 raise Exception(f"Phase 3 error: {state.get('error_log')}")
 
             final_output = state.get("final_output", {})
@@ -351,17 +352,17 @@ class OnlineInferenceRunner:
             f"⏱️  {result.case_id}（{result.case_type}）：总耗时={result.processing_time:.2f} 秒 | {' '.join(parts)}"
         ))
 
-    def run(
+    def run( # 运行推理器
         self,
-        case_dirs: List[CasePair],
-        case_types: List[str],
-        retry_failed: bool = False,
-        rerun: bool = False
+        case_dirs: List[CasePair],  # 
+        case_types: List[str],      # ['control_case', 'trap_case']
+        retry_failed: bool = False, # False # 仅重跑失败案例
+        rerun: bool = False         # True  # 重跑所有案例
     ) -> List[OnlineResult]:
 
         tasks = []
 
-        if retry_failed:
+        if retry_failed: # False # 仅重跑失败案例
 
             error_cases = self.output_manager.get_error_cases()
             for case_id, case_type in error_cases:
@@ -372,7 +373,7 @@ class OnlineInferenceRunner:
                         tasks.append((case_dir, case_type))
                         break
             print(tr(f"[OnlineRunner] Retrying {len(tasks)} failed cases", f"[在线推理] 重试 {len(tasks)} 个失败病例"))
-        elif rerun:
+        elif rerun: # True  # 重跑所有案例
 
             tasks = [(case_dir, case_type) for case_dir in case_dirs for case_type in case_types]
             print(tr(f"[OnlineRunner] Rerunning {len(tasks)} cases (ignoring previous results)",
@@ -423,16 +424,18 @@ class OnlineInferenceRunner:
 
         results = []
 
-        with tqdm(total=len(tasks), desc=tr("Online Inference (Parallel)", "在线推理（并行）")) as pbar:
-            with ThreadPoolExecutor(
+        with tqdm(total=len(tasks), desc=tr("Online Inference (Parallel)", "在线推理（并行）")) as pbar: 
+            with ThreadPoolExecutor( # len(tasks)=2, self.max_workers=4
                 max_workers=self.max_workers,
                 initializer=LocalInferenceWorkers().initialize,
                 thread_name_prefix="ecr-worker",
             ) as executor:
-                future_to_task = {
+                future_to_task = { # 执行处理单个案例self.process_single_case
                     executor.submit(self.process_single_case, case_dir, case_type): (case_dir, case_type)
-                    for case_dir, case_type in tasks
+                    for case_dir, case_type in tasks # case_dir是病例的全部信息:描述、诊断结果、及其编号。 casetype:案例类型。
                 }
+                print("lzc: future_to_task", type(future_to_task))
+                exit(0)
 
                 for future in as_completed(future_to_task):
                     try:
@@ -454,6 +457,8 @@ class OnlineInferenceRunner:
                     pbar.set_postfix_str(f"{status_icon} {result.case_id}")
                     pbar.update(1)
 
+        print("lzc; !!!!")
+        exit(0)
         return results
 
 def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
@@ -700,17 +705,17 @@ Examples:
         help=tr("Number of concurrent workers (default: 4)", "并行工作线程数（默认：4）")
     )
 
-    rerun_group = parser.add_mutually_exclusive_group()
+    rerun_group = parser.add_mutually_exclusive_group() # 添加相互排斥的组：互斥参数组最多只能启动一个
     rerun_group.add_argument(
         "--retry-failed",
         action="store_true",
-        help=tr("Retry only previously failed cases", "仅重试之前失败的病例")
+        help=tr("Retry only previously failed cases", "仅重试之前失败的病例") # 仅重跑失败案例
     )
     rerun_group.add_argument(
         "--rerun",
         action="store_true",
         help=tr("Rerun all selected cases even if results already exist in the output directory",
-                "重跑所有已选病例，即使输出目录中已有结果（忽略历史结果）")
+                "重跑所有已选病例，即使输出目录中已有结果（忽略历史结果）") # 重跑所有案例
     )
 
     parser.add_argument(
@@ -730,35 +735,36 @@ Examples:
     return parser.parse_args(argv)
 
 def main():
-    configure_console_encoding()
-    load_dotenv()
+    configure_console_encoding() #将标准输出和错误输出设为 UTF-8, 适配中文编码
+    load_dotenv() # 读取.env文件
 
     args = parse_args()
 
-    config_path = Path(args.config or PROJECT_ROOT / "config" / "settings.yaml").expanduser().resolve()
-    config = load_config(config_path)
-    online_config = config.get("online_inference", {})
+    config_path = Path(args.config or PROJECT_ROOT / "config" / "settings.yaml").expanduser().resolve() # G:\Codex\MedEinst\config\settings.yaml
+    config = load_config(config_path) # 解析settings.yaml
+    online_config = config.get("online_inference", {}) #解析出相关路径：{'memory_bank_dir': '../memory_bank', 'output_dir': '../output_smoke'....}
 
     def runtime_path(cli_value: Optional[str], key: str, default: str) -> str:
         if cli_value:
             return str(Path(cli_value).expanduser().resolve())
         return config_relative_path(online_config.get(key, default), config_path)
 
-    output_dir = runtime_path(args.output_dir, "output_dir", "../output_online")
-    raw_graph_dir = runtime_path(args.raw_graph_dir, "golden_graph_dir", "../golden_graphs")
-    refined_graph_dir = runtime_path(args.refined_graph_dir, "refined_graph_dir", "../golden_graphs_refined")
-    memory_bank_dir = runtime_path(args.memory_bank_dir, "memory_bank_dir", "../memory_bank")
+    # 给出绝对路径: 推理输出、原始疾病图、精化后的疾病图、范例记忆库
+    output_dir = runtime_path(args.output_dir, "output_dir", "../output_online") # G:\Codex\MedEinst\output_smoke
+    raw_graph_dir = runtime_path(args.raw_graph_dir, "golden_graph_dir", "../golden_graphs") # G:\Codex\MedEinst\golden_graphs
+    refined_graph_dir = runtime_path(args.refined_graph_dir, "refined_graph_dir", "../golden_graphs_refined") # G:\Codex\MedEinst\golden_graphs_refined
+    memory_bank_dir = runtime_path(args.memory_bank_dir, "memory_bank_dir", "../memory_bank") # G:\Codex\MedEinst\memory_bank
 
-    if args.model:
+    if args.model: # args.model==None
         config["api"]["model_name"] = args.model
 
-    output_manager = OnlineOutputManager(output_dir)
+    output_manager = OnlineOutputManager(output_dir) # 负责所有结果的落盘（保存到磁盘）和断点续跑（从上次中断处继续）的读写
 
-    # Load the Benchmark Test Set, preserving original pair IDs and narratives.
-    input_path = Path(args.benchmark_set).expanduser()
-    case_dirs = load_pairs(input_path)
+    # Load the Benchmark Test Set, preserving original pair IDs and narratives. # 加载基准测试集，保留原始对ID和叙述。
+    input_path = Path(args.benchmark_set).expanduser() # "G:\Codex\MedEinst_dataset\test.jsonl" #.expanduser() —— 展开路径开头的 ~ 为用户主目录（如 ~/data/test.jsonl → C:\Users\xxx\data\test.jsonl）
+    case_dirs = load_pairs(input_path) #  <class 'list'> # 5383
 
-    if args.case_ids:
+    if args.case_ids: # case_ids = None
         specified_ids = {item.strip() for item in args.case_ids.split(",")}
         missing_ids = specified_ids - {pair.case_id for pair in case_dirs}
         if missing_ids:
@@ -766,18 +772,18 @@ def main():
                                 f"基准测试集中不存在以下病例对 ID：{sorted(missing_ids)}"))
         case_dirs = [pair for pair in case_dirs if pair.case_id in specified_ids]
 
-    if args.limit is not None:
+    if args.limit is not None: #是否只使用少量数据进行测试
         if args.limit < 1:
             raise ValueError(tr("--limit must be positive", "--limit 必须是正整数"))
         case_dirs = case_dirs[:args.limit]
 
     case_types = []
-    if not args.skip_control:
+    if not args.skip_control: # skip_control = False
         case_types.append("control_case")
-    if not args.skip_trap:
+    if not args.skip_trap: # False
         case_types.append("trap_case")
 
-    if not case_types:
+    if not case_types: # case_types = ['control_case', 'trap_case']
         print(tr("❌ No case types to process", "❌ 没有可处理的病例类型"))
         sys.exit(1)
 

@@ -182,38 +182,42 @@ class LocalTransformersBackend:
 
     def generate(self, messages, max_new_tokens, temperature=0.0, top_p=0.95,
                  repetition_penalty=1.0, chat_template_kwargs=None):
-        backend = self._worker_backend()
-        if backend is not self:
+        backend = self._worker_backend() # <src.utils.local_llm.LocalTransformersBackend object>
+        if backend is not self: # False
             return backend.generate(
                 messages, max_new_tokens, temperature, top_p,
                 repetition_penalty, chat_template_kwargs,
             )
         with self._lock:
-            self._load()
+            self._load() # 处理每个病例的时候重新读入模型
             import torch
 
-            # Existing agents only send text. VL loading stays text-only, as in
-            # lab2.py, without requiring image/video processor dependencies.
-            template_options = dict(chat_template_kwargs or {})
-            template_options.update(tokenize=False, add_generation_prompt=True)
-            prompt = self.tokenizer.apply_chat_template(messages, **template_options)
-            inputs = self.tokenizer(prompt, return_tensors="pt", add_special_tokens=False)
+            # Existing agents only send text. VL loading stays text-only, as in lab2.py, without requiring image/video processor dependencies.
+            # 现有代理仅发送文本。VL加载仅保留文本，如lab2.py中所示，不需要图像/视频处理器依赖关系。
+            template_options = dict(chat_template_kwargs or {}) # {}
+            template_options.update(tokenize=False, add_generation_prompt=True) # {'tokenize': False, 'add_generation_prompt': True}
+            # tokenize=F：别帮我分词，只给我文本；add_generation_prompt=T：轮到模型说了
+            prompt = self.tokenizer.apply_chat_template(messages, **template_options) # 通过huggingface的apply_chat_template：将上下文messages数组转换为文本字符串
+            inputs = self.tokenizer(prompt, return_tensors="pt", add_special_tokens=False) # 编码：对话文本字符串 => 张量
+            # return_tensors="pt"：让结果变成张量；add_special_tokens=F ： 不加开始结束等控制符( 开始BOS、结束EOS)
             inputs = inputs.to(self.model.device)
             generation = dict(
-                max_new_tokens=max_new_tokens,
-                do_sample=temperature > 0,
-                repetition_penalty=repetition_penalty,
+                max_new_tokens=max_new_tokens,        # 4096
+                do_sample=temperature > 0,            # False   # temperature=0,无随机
+                repetition_penalty=repetition_penalty,# 1       # 重复惩罚系数
             )
-            if temperature > 0:
+            if temperature > 0: # False
                 generation.update(temperature=temperature, top_p=top_p)
             # Preserve model generation_config EOS lists (e.g. Qwen turn-end).
-            pad_id = self.tokenizer.pad_token_id
-            if pad_id is None:
+            # 保留模型生成_config EOS列表（例如Qwen转弯结束）。
+            pad_id = self.tokenizer.pad_token_id # pad_id=151643 # PAD是“填充符”，151643是当前模型的空白填充符编码
+            if pad_id is None: # False
                 pad_id = self.tokenizer.eos_token_id
-            if pad_id is not None:
+            if pad_id is not None: # True
                 generation["pad_token_id"] = pad_id
-            with torch.inference_mode():
-                output = self.model.generate(**inputs, **generation)
+            with torch.inference_mode(): # 推理模式，关闭训练所需的求导
+                output = self.model.generate(**inputs, **generation) # 运行自回归解码
+                # generation包含四项内容：最大长度、随机性、重复性、空白填空符。 {'max_new_tokens': 4096, 'do_sample': False, 'repetition_penalty': 1.0, 'pad_token_id': 151643}
             sequences = getattr(output, "sequences", output)
             generated = sequences[0][inputs["input_ids"].shape[1]:]
             return self.tokenizer.decode(generated, skip_special_tokens=True)

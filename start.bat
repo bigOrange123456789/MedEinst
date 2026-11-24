@@ -13,7 +13,8 @@ if errorlevel 1 goto :error
 
 echo [3/4] Running ECR agent...
 rem Local inference automatically assigns workers across visible CUDA GPUs.
-python run_ecr_agent.py --benchmark-set "G:\Codex\MedEinst_dataset\test.jsonl" --output-dir "G:\Codex\MedEinst\output_smoke" --parallel --workers 4 --console-language zh --rerun
+python run_ecr_agent.py --benchmark-set "G:\Codex\MedEinst_dataset\test.jsonl" --output-dir "G:\Codex\MedEinst\output_smoke" --parallel --workers 4 --console-language zh --rerun --limit 2 --detailed-timing
+::  --parallel --workers 4 --console-language zh --rerun --limit 2 --detailed-timing
 if errorlevel 1 goto :error
 
 echo [4/4] Computing paper metrics...

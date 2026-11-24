@@ -229,3 +229,4 @@ tests/*
 !tests/test_launchers_local.py
 !tests/test_console_language.py
 !tests/test_multi_gpu.py
+config_zh

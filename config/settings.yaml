@@ -3,7 +3,9 @@
 # Base diagnostic model: local weights or an OpenAI-compatible endpoint.
 api:
   localhost: true  # localhost=true 直接加载本地 Transformers 权重，忽略 URL/API Key; HTTP 服务（Ollama/vLLM/LM Studio）则保持 false，配置 base_url。
-  model_path: "G:/Codex/MLMtest/Qwen3-VL-2B-Instruct"              # 例：'G:/models/Qwen3-8B'；相对路径以本文件目录为准
+  model_name: "DeepSeek-R1-Distill-Qwen-1.5B"
+  model_path: "G:/Codex/MLMtest/DeepSeek-R1-Distill-Qwen-1.5B"              # 例：'G:/models/Qwen3-8B'；相对路径以本文件目录为准
+  # model_path: "G:/Codex/MLMtest/Qwen3-VL-2B-Instruct"
   lora_adapter: null            # 可选：'G:/models/my-lora'
   # 设备自动检测：优先使用可用 GPU，否则使用 CPU；加载时打印运行模式。
   torch_dtype: auto             # auto / float32 / float16 / bfloat16
@@ -24,12 +26,15 @@ api:
   # timeout: 120
   # max_retries: 3
   # retry_delay: 2
-  base_url: "https://www.runtoken.ai/v1"   # base_url: null  # Official OpenAI API; an optional compatible URL may be set here
-  base_url_env: ECR_CRITIC_URL
-  api_key_env: OPENAI_API_KEY
-  model_name: "gpt-6.1-sol" #"gpt-4o"  # Configurable by the user
   timeout: 180                  # HTTP 请求超时；本地 generate 不使用此超时
   max_retries: 2
+# api:
+#   base_url: "https://www.runtoken.ai/v1"   # base_url: null  # Official OpenAI API; an optional compatible URL may be set here
+#   base_url_env: ECR_CRITIC_URL
+#   api_key_env: OPENAI_API_KEY
+#   model_name: "gpt-6.1-sol" #"gpt-4o"  # Configurable by the user
+#   timeout: 180                  # HTTP 请求超时；本地 generate 不使用此超时
+#   max_retries: 2
 
 # Critic for CGME feedback and optional Illness Graph refinement.
 critical_model:
@@ -71,8 +76,9 @@ offline_training:
   max_workers: 5
   batch_aggregation: true
 
-# Paths in this file are relative to config/settings.yaml. CLI paths are relative
-# to the caller's current directory, or may be absolute.
+# Paths in this file are relative to config/settings.yaml. CLI paths are relative to the caller's current directory, or may be absolute.
+# 此文件中的路径是相对于config/settings.yaml的。CLI路径相对于调用者的当前目录，也可以是绝对路径。
+# 1.原始疾病图\2.精化后的疾病图\3.范例记忆库\4.推理输出
 online_inference:
   golden_graph_dir: "../golden_graphs"
   refined_graph_dir: "../golden_graphs_refined"

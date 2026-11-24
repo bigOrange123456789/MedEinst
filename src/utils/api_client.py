@@ -91,19 +91,25 @@ class LLMClient:
         return re.sub(r"^.*?</think>\s*", "", content or "", flags=re.DOTALL).strip()
 
     def generate_json(
-        self, messages: list, model: str, logprobs: bool = True,
-        top_logprobs: int = 5, temperature: float = 0.0, max_tokens: int = 4096,
-        max_retries: Optional[int] = None, retry_delay: Optional[float] = None,
+        self, 
+        messages: list, # 上下文：四条上下文，system【提示】、user【问题示例】、assistant【回复示例】、user【问题】
+        model: str, # 模型名称：DeepSeek-R1-Distill-Qwen-1.5B
+        logprobs: bool = True, # 是否返回token级概率
+        top_logprobs: int = 5, # 每个位置额外返回几个"备选 token"
+        temperature: float = 0.0, 
+        max_tokens: int = 4096,
+        max_retries: Optional[int] = None,   # 最多尝试几次
+        retry_delay: Optional[float] = None, # 固定等待多少秒
     ) -> Dict[str, Any]:
-        temperature = self.generation_config.get("temperature", temperature)
-        max_tokens = self.generation_config.get("max_new_tokens", max_tokens)
+        temperature = self.generation_config.get("temperature", temperature)    # 0
+        max_tokens = self.generation_config.get("max_new_tokens", max_tokens)   # 4096
         if self.is_local:
             try:
                 content = self.local_backend.generate(
                     messages, max_new_tokens=max_tokens, temperature=temperature,
-                    top_p=self.generation_config.get("top_p", 0.95),
-                    repetition_penalty=self.generation_config.get("repetition_penalty", 1.0),
-                    chat_template_kwargs=self.chat_template_kwargs,
+                    top_p=self.generation_config.get("top_p", 0.95), # 0.95
+                    repetition_penalty=self.generation_config.get("repetition_penalty", 1.0), # 1.0 # 重复惩罚:>1 抑制重复、鼓励用词多样；<1 反而鼓励重复（几乎没人用）
+                    chat_template_kwargs=self.chat_template_kwargs, # {} # 每个模型的模板不一样，能用的 key 就不一样
                 )
                 content = self._answer_content(content)
                 completion = SimpleNamespace(choices=[SimpleNamespace(

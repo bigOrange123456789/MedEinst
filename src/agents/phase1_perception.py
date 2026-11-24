@@ -69,12 +69,12 @@ def normalize_candidate_list(candidates: List[Any]) -> List[str]:
 
     return normalized
 
-class Phase1TrackAAgent:
+class Phase1TrackAAgent: # 直觉诊断
     """Generate initial differential diagnosis candidates."""
 
     def __init__(self, llm_client: LLMClient, model_name: str = "gpt-4o"):
-        self.llm_client = llm_client
-        self.model_name = model_name
+        self.llm_client = llm_client # 基模型
+        self.model_name = model_name # 基模型名称
 
     def extract_json_from_response(self, response_text: str) -> Optional[Dict[str, Any]]:
 
@@ -281,7 +281,7 @@ class Phase1TrackAAgent:
             traceback.print_exc()
             return 0.0
 
-    def process(self, patient_narrative: str, global_hint: Optional[str] = None) -> Dict[str, Any]:
+    def process(self, patient_narrative: str, global_hint: Optional[str] = None) -> Dict[str, Any]: # 病例描述, 教授点评引导
 
         system_prompt = PHASE1_TRACKA_SYSTEM_PROMPT
         if global_hint and global_hint.strip():
@@ -289,20 +289,37 @@ class Phase1TrackAAgent:
 
         messages = [
             {"role": "system", "content": system_prompt}
-        ]
+        ] # system_prompt 中的关键点：从49种疾病中找出最可能的5种疾病，
+        '''
+        输出格式的要求：
+        {
+            "structured_analysis": { #结构化分析
+                "demographics": "...",
+                "positive_findings": ["..."], # 阳性症状
+                "negative_findings": ["..."], # 阴性症状
+                "subjective_to_objective_map": { # 主观到客观的映射
+                "patient_quote": "medical_term" # 患者引用
+                }
+            },
+            "differential_reasoning": "...", # 
+            "top_candidates": ["ID1", "ID2", "ID3", "ID4", "ID5"], # 最可能的疾病
+            "final_diagnosis_id": "XX" # 最终诊断结果
+        }
+        '''
 
-        messages.extend(PHASE1_TRACKA_FEW_SHOT_MESSAGES)
+        messages.extend(PHASE1_TRACKA_FEW_SHOT_MESSAGES) # 往聊天消息列表里注入1对示例。extend把输入展开后依次接入。
 
-        user_prompt = build_phase1_tracka_user_prompt(patient_narrative)
+        user_prompt = build_phase1_tracka_user_prompt(patient_narrative) 
+        # 头部添加一行“ **Patient Profile:**”，尾部添加两行“**Instruction:** Analyze the case above following the JSON format.”
         messages.append({"role": "user", "content": user_prompt})
 
         result = self.llm_client.generate_json(
-            messages=messages,
-            model=self.model_name,
+            messages=messages, # 上限文长度为4，四个的role分别为：system【提示】、user【问题示例】、assistant【回复示例】、user【问题】
+            model=self.model_name, # DeepSeek-R1-Distill-Qwen-1.5B
             logprobs=False,
 
-            temperature=0.0,
-            max_tokens=4096
+            temperature=0.0, # 降低随机
+            max_tokens=4096  # token上限为4K
         )
 
         if result["error"]:

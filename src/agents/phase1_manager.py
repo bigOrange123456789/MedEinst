@@ -6,23 +6,23 @@ from src.agents.phase1_perception import Phase1TrackAAgent
 from src.agents.phase1_trackB import Phase1TrackBAgent
 
 
-class Phase1Manager:
-    """Combine intuitive candidates with analytic observations."""
+class Phase1Manager: 
+    """根据病例生成候选疾病集合、症状集合。Combine intuitive candidates with analytic observations."""
 
     def __init__(self, llm_client: LLMClient, model_name: str = "gpt-4o"):
 
         self.llm_client = llm_client
         self.model_name = model_name
 
-        self.track_a = Phase1TrackAAgent(llm_client, model_name=model_name)
-        self.track_b = Phase1TrackBAgent(llm_client, model_name=model_name)
+        self.track_a = Phase1TrackAAgent(llm_client, model_name=model_name) # 用于生成候选疾病集合
+        self.track_b = Phase1TrackBAgent(llm_client, model_name=model_name) # 用于生成症状集合
 
     def process(
         self,
-        raw_narrative: str,
-        age: int = None,
-        sex: str = None,
-        global_hint: Optional[str] = None
+        raw_narrative: str, # 病例的原始描述
+        age: int = None, # 年龄
+        sex: str = None, # 性别
+        global_hint: Optional[str] = None #可选的纠错文本，是CriticalModelAgent在答错后生成的prompt，"上次错在哪"。None表示"没有提示"。
     ) -> Dict[str, Any]:
 
         print("=" * 60)
@@ -44,7 +44,7 @@ class Phase1Manager:
         ))
         track_a_result = self.track_a.process(raw_narrative, global_hint=global_hint)
 
-        if track_a_result.get("error"):
+        if track_a_result.get("error"): # 直觉诊断失败
             print(tr(
                 f"[Phase1 Manager] Track A failed: {track_a_result['error']}",
                 f"[阶段1] 轨道 A 失败：{track_a_result['error']}"
@@ -73,7 +73,7 @@ class Phase1Manager:
         ))
         track_b_result = self.track_b.process(raw_narrative, age=age, sex=sex, global_hint=global_hint)
 
-        if track_b_result.get("error"):
+        if track_b_result.get("error"): # 症状感知失败
             print(tr(
                 f"[Phase1 Manager] Track B failed: {track_b_result['error']}",
                 f"[阶段1] 轨道 B 失败：{track_b_result['error']}"
